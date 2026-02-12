@@ -72,7 +72,6 @@ export async function upsertNewsPost(
       if (error) return { ok: false, error: error.message };
     }
 
-    // Force refresh of admin list + public pages
     revalidatePath("/portal/admin/news");
     revalidatePath("/news");
 
@@ -80,4 +79,30 @@ export async function upsertNewsPost(
   } catch (e: any) {
     return { ok: false, error: e?.message ?? "Unknown error" };
   }
+}
+
+/**
+ * Added the missing deleteNewsPost function
+ */
+export async function deleteNewsPost(formData: FormData) {
+  await requireRole(["admin"]);
+  
+  const id = formData.get("id");
+  if (!id) return { ok: false, error: "Missing post ID" };
+
+  const sb = supabaseAdmin();
+  const { error } = await sb
+    .from("news_posts")
+    .delete()
+    .eq("id", Number(id));
+
+  if (error) {
+    console.error("DELETE ERROR:", error);
+    return { ok: false, error: error.message };
+  }
+
+  revalidatePath("/portal/admin/news");
+  revalidatePath("/news");
+
+  return { ok: true, message: "Post deleted successfully" };
 }
