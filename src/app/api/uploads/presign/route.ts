@@ -1,3 +1,4 @@
+// src/app/api/uploads/presign/route.ts
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
@@ -46,8 +47,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
     }
 
-    // Allow only common image types for cover images (tighten now; expand later)
-    const allowed = new Set(["image/jpeg", "image/png", "image/webp"]);
+    // Allow images and PDFs
+    const allowed = new Set([
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+      "application/pdf",
+    ]);
     if (!allowed.has(parsed.data.contentType)) {
       return NextResponse.json({ ok: false, error: "Unsupported file type" }, { status: 400 });
     }
@@ -64,7 +70,6 @@ export async function POST(req: Request) {
       Bucket: bucket,
       Key: key,
       ContentType: parsed.data.contentType,
-      // No ACLs on R2; public delivery is via your CDN domain
     });
 
     const uploadUrl = await getSignedUrl(s3, cmd, { expiresIn: 60 }); // 60 seconds

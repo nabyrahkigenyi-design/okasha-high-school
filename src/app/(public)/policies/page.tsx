@@ -1,30 +1,30 @@
 import { PageShell } from "@/components/public/PageShell";
+import { supabaseAdmin } from "@/lib/supabase/admin";
+import PolicyLibrary from "./PolicyLibrary";
 
 export const revalidate = 3600;
 
 export const metadata = {
   title: "Policies | Okasha High School",
-  description: "School policies (placeholder).",
+  description: "School policies and documents.",
 };
 
-const policies = [
-  { title: "Code of Conduct", note: "Placeholder summary. Add PDF later." },
-  { title: "Attendance Policy", note: "Placeholder summary. Add details later." },
-  { title: "Uniform Policy", note: "Placeholder summary. Add details later." },
-  { title: "Safeguarding / Child Protection", note: "Placeholder summary. Add details later." },
-];
+export default async function PoliciesPage() {
+  const sb = supabaseAdmin();
+  const { data: docs } = await sb
+    .from("policy_documents")
+    .select("id, title, summary, file_url, file_name, category, sort_order")
+    .eq("is_published", true)
+    .order("sort_order", { ascending: true })
+    .limit(500);
 
-export default function PoliciesPage() {
   return (
-    <PageShell title="Policies" subtitle="Placeholder list. Later you can attach PDFs stored in R2 and served via CDN.">
-      <div className="grid gap-4">
-        {policies.map((p) => (
-          <section key={p.title} className="rounded-2xl border bg-white p-6">
-            <h2 className="font-semibold text-[color:var(--ohs-charcoal)]">{p.title}</h2>
-            <p className="mt-2 text-sm text-slate-600">{p.note}</p>
-          </section>
-        ))}
-      </div>
+    <PageShell
+      title="Policies"
+      subtitle="School policies and documents. (Updated by administration.)"
+      watermark
+    >
+      <PolicyLibrary docs={docs ?? []} />
     </PageShell>
   );
 }

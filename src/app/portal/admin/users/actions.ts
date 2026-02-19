@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { requireRole } from "@/lib/rbac";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { redirect } from "next/navigation";
 
 const Schema = z.object({
   email: z.string().email(),
@@ -11,18 +12,22 @@ const Schema = z.object({
   role_key: z.enum(["student", "parent", "teacher", "admin"]),
 });
 
-export async function adminCreateUser(formData: FormData) {
+export async function adminCreateUser(formData: FormData): Promise<void> {
   await requireRole(["admin"]);
 
   const parsed = Schema.safeParse({
-    email: formData.get("email"),
-    password: formData.get("password"),
-    full_name: formData.get("full_name"),
-    role_key: formData.get("role_key"),
+    email: String(formData.get("email") ?? ""),
+    password: String(formData.get("password") ?? ""),
+    full_name: String(formData.get("full_name") ?? ""),
+    role_key: String(formData.get("role_key") ?? "student"),
   });
 
   if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues.map(i => i.message).join(", ") };
+    redirect(
+      `/portal/admin/users?err=${encodeURIComponent(
+        parsed.error.issues.map((i) => i.message).join(", ")
+      )}`
+    );
   }
 
   const sb = supabaseAdmin();
@@ -33,7 +38,13 @@ export async function adminCreateUser(formData: FormData) {
     email_confirm: true,
   });
 
-  if (error || !data.user) return { ok: false, error: error?.message ?? "Failed to create user" };
+  if (error || !data.user) {
+    redirect(
+      `/portal/admin/users?err=${encodeURIComponent(
+        error?.message ?? "Failed to create user"
+      )}`
+    );
+  }
 
   const { error: upsertError } = await sb.from("profiles").upsert({
     id: data.user.id,
@@ -42,7 +53,9 @@ export async function adminCreateUser(formData: FormData) {
     is_active: true,
   });
 
-  if (upsertError) return { ok: false, error: upsertError.message };
+  if (upsertError) {
+    redirect(`/portal/admin/users?err=${encodeURIComponent(upsertError.message)}`);
+  }
 
-  return { ok: true };
+  redirect("/portal/admin/users?ok=1");
 }

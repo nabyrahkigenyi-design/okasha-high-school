@@ -1,9 +1,8 @@
 "use client";
 
 import { useFormState, useFormStatus } from "react-dom";
-import type { NewsActionState } from "./actions";
-import { upsertNewsPost } from "./actions";
 import CoverImageField from "./CoverImageField";
+import { upsertNewsPost, deleteNewsPost, type NewsActionState } from "./actions";
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -32,13 +31,15 @@ export default function NewsEditor({
     status: "draft" | "published";
   } | null;
 }) {
+  const initialState: NewsActionState = { ok: true, message: "" };
+
   const [state, formAction] = useFormState<NewsActionState, FormData>(
     upsertNewsPost,
-    undefined
+    initialState
   );
 
   return (
-    <div>
+    <>
       <form action={formAction} className="mt-4 grid gap-3">
         <input type="hidden" name="id" value={selected?.id ?? ""} />
 
@@ -101,10 +102,29 @@ export default function NewsEditor({
 
         <div className="flex items-center gap-3">
           <SubmitButton />
-          {state?.ok ? <span className="text-sm text-green-700">{state.message}</span> : null}
-          {!state?.ok && state?.error ? <span className="text-sm text-red-600">{state.error}</span> : null}
+          {state.ok && state.message ? (
+            <span className="text-sm text-green-700">{state.message}</span>
+          ) : null}
+          {!state.ok && state.error ? (
+            <span className="text-sm text-red-600">{state.error}</span>
+          ) : null}
         </div>
       </form>
-    </div>
+
+      {selected?.id ? (
+        <form
+          action={deleteNewsPost}
+          className="mt-6 border-t pt-4"
+          onSubmit={(e) => {
+            if (!confirm("Delete this post? This cannot be undone.")) e.preventDefault();
+          }}
+        >
+          <input type="hidden" name="id" value={selected.id} />
+          <button type="submit" className="text-sm text-red-600 underline hover:text-red-800">
+            Delete this post
+          </button>
+        </form>
+      ) : null}
+    </>
   );
 }

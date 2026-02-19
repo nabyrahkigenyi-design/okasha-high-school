@@ -10,3 +10,171 @@
   --ohs-surface: #FAFAFA;
   --ohs-border: #E5E7EB;
 }
+/* ---------- Typography helpers ---------- */
+.heading-kicker {
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-weight: 800;
+  font-size: 0.72rem;
+  color: rgb(100 116 139); /* slate-500-ish */
+}
+
+.heading-accent {
+  /* For a colored word/part inside headings */
+  color: var(--ohs-sky);
+}
+
+/* Arabic font helper (you already added cairo) */
+.font-ar {
+  font-family: var(--font-ar), var(--font-sans), system-ui, sans-serif;
+  letter-spacing: 0;
+}
+
+/* ---------- Link hover + tap animations ---------- */
+a,
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.link-soft {
+  position: relative;
+  transition: transform 150ms ease, color 150ms ease;
+}
+
+.link-soft::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -3px;
+  height: 2px;
+  width: 100%;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 180ms ease;
+  background: linear-gradient(90deg, var(--ohs-sky), var(--ohs-cream));
+  opacity: 0.9;
+}
+
+.link-soft:hover::after,
+.link-soft:focus-visible::after {
+  transform: scaleX(1);
+}
+
+.link-soft:hover,
+.link-soft:focus-visible {
+  color: rgb(2 6 23);
+}
+
+.tap-press:active {
+  transform: scale(0.98);
+}
+
+/* ---------- Navigation pill style ---------- */
+.nav-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  border-radius: 9999px;
+  border: 1px solid rgb(226 232 240);
+  background: rgba(255, 255, 255, 0.75);
+  transition: background 150ms ease, transform 150ms ease, box-shadow 150ms ease;
+}
+
+.nav-pill:hover {
+  background: rgba(248, 250, 252, 1);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+}
+
+.nav-pill:active {
+  transform: translateY(0px) scale(0.99);
+}
+
+.portal-cta {
+  border-radius: 9999px;
+  padding: 0.55rem 1rem;
+  font-weight: 800;
+  color: white;
+  background: rgb(15 23 42); /* slate-900 */
+  transition: transform 150ms ease, background 150ms ease, box-shadow 150ms ease;
+}
+
+.portal-cta:hover {
+  background: rgb(30 41 59); /* slate-800 */
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.22);
+}
+
+.portal-cta:active {
+  transform: translateY(0px) scale(0.99);
+}
+
+/* ---------- Footer dull background helper ---------- */
+.footer-dull {
+  background: radial-gradient(
+      circle at 20% 20%,
+      rgba(135, 206, 235, 0.18),
+      rgba(0, 0, 0, 0) 60%
+    ),
+    radial-gradient(
+      circle at 80% 70%,
+      rgba(255, 248, 220, 0.22),
+      rgba(0, 0, 0, 0) 55%
+    ),
+    linear-gradient(180deg, #ffffff, #f7f8fb);
+}
+
+
+.bg-image-overlay {
+  position: relative;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.bg-image-overlay::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.bg-image-overlay::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(34, 45, 38, 0.65); /* earthy green overlay */
+}
+
+.bg-image-overlay > * {
+  position: relative;
+  z-index: 1;
+}
+
+.bg-image-overlay {
+  position: relative;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.bg-image-overlay::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.bg-image-overlay::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(34, 45, 38, 0.65); /* earthy overlay */
+}
+
+.bg-image-overlay > * {
+  position: relative;
+  z-index: 1;
+}

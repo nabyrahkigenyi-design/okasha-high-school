@@ -1,28 +1,32 @@
-import { ReactNode } from "react";
+// src/components/public/PageShell.tsx
 import { WatermarkedSection } from "@/components/WatermarkedSection";
 
 export function PageShell({
   title,
   subtitle,
+  watermark,
   children,
-  watermark = false,
 }: {
   title: string;
   subtitle?: string;
-  children: ReactNode;
   watermark?: boolean;
+  children: React.ReactNode;
 }) {
-  const Wrapper = watermark ? WatermarkedSection : ({ children }: { children: ReactNode }) => <>{children}</>;
+  const Wrap = ({ children }: { children: React.ReactNode }) =>
+    watermark ? <WatermarkedSection>{children}</WatermarkedSection> : <>{children}</>;
 
   return (
-    <Wrapper>
-      <main className="mx-auto max-w-6xl px-4 py-12">
+    <Wrap>
+      <main className="mx-auto max-w-6xl px-4 py-10">
         <header className="max-w-3xl">
-          <h1 className="text-3xl font-semibold text-[color:var(--ohs-charcoal)]">{title}</h1>
-          {subtitle ? <p className="mt-3 text-slate-600">{subtitle}</p> : null}
+          <h1 className="text-3xl font-bold tracking-tight text-[color:var(--ohs-charcoal)]">
+            {title}
+          </h1>
+          {subtitle ? <p className="mt-3 text-base text-slate-600">{subtitle}</p> : null}
         </header>
-        <div className="mt-8">{children}</div>
+
+        <section className="mt-8">{children}</section>
       </main>
-    </Wrapper>
+    </Wrap>
   );
 }

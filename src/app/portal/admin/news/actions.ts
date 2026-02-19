@@ -36,7 +36,7 @@ export async function upsertNewsPost(
   });
 
   if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues.map(i => i.message).join(", ") };
+    return { ok: false, error: parsed.error.issues.map((i) => i.message).join(", ") };
   }
 
   const sb = supabaseAdmin();
@@ -56,53 +56,34 @@ export async function upsertNewsPost(
 
   if (parsed.data.status === "published") payload.published_at = nowPublishedAt;
 
-  try {
-    if (parsed.data.id) {
-      const { error } = await sb
-        .from("news_posts")
-        .update(payload)
-        .eq("id", Number(parsed.data.id));
+  if (parsed.data.id) {
+    const { error } = await sb.from("news_posts").update(payload).eq("id", Number(parsed.data.id));
+    if (error) return { ok: false, error: error.message };
+  } else {
+    payload.created_by = me.id;
+    payload.published_at = parsed.data.status === "published" ? nowPublishedAt : null;
 
-      if (error) return { ok: false, error: error.message };
-    } else {
-      payload.created_by = me.id;
-      payload.published_at = parsed.data.status === "published" ? nowPublishedAt : null;
-
-      const { error } = await sb.from("news_posts").insert(payload);
-      if (error) return { ok: false, error: error.message };
-    }
-
-    revalidatePath("/portal/admin/news");
-    revalidatePath("/news");
-
-    return { ok: true, message: "Saved." };
-  } catch (e: any) {
-    return { ok: false, error: e?.message ?? "Unknown error" };
-  }
-}
-
-/**
- * Added the missing deleteNewsPost function
- */
-export async function deleteNewsPost(formData: FormData) {
-  await requireRole(["admin"]);
-  
-  const id = formData.get("id");
-  if (!id) return { ok: false, error: "Missing post ID" };
-
-  const sb = supabaseAdmin();
-  const { error } = await sb
-    .from("news_posts")
-    .delete()
-    .eq("id", Number(id));
-
-  if (error) {
-    console.error("DELETE ERROR:", error);
-    return { ok: false, error: error.message };
+    const { error } = await sb.from("news_posts").insert(payload);
+    if (error) return { ok: false, error: error.message };
   }
 
   revalidatePath("/portal/admin/news");
   revalidatePath("/news");
 
-  return { ok: true, message: "Post deleted successfully" };
+  return { ok: true, message: "Saved." };
+}
+
+// IMPORTANT: used directly in <form action={deleteNewsPost}>
+export async function deleteNewsPost(formData: FormData): Promise<void> {
+  await requireRole(["admin"]);
+
+  const id = Number(formData.get("id"));
+  if (!id) return;
+
+  const sb = supabaseAdmin();
+  const { error } = await sb.from("news_posts").delete().eq("id", id);
+  if (error) return;
+
+  revalidatePath("/portal/admin/news");
+  revalidatePath("/news");
 }

@@ -1,3 +1,4 @@
+// src/app/portal/admin/layout.tsx
 import { ReactNode } from "react";
 import Link from "next/link";
 import { requireRole } from "@/lib/rbac";
@@ -13,6 +14,13 @@ export default async function AdminLayout({ children }: { children: ReactNode })
           <Link className="underline" href="/portal/admin/dashboard">Dashboard</Link>
           <Link className="underline" href="/portal/admin/users">Users</Link>
           <Link className="underline" href="/portal/admin/news">News</Link>
+          <Link className="underline" href="/portal/admin/staff">Staff</Link>
+          <Link className="underline" href="/portal/admin/calendar">Calendar</Link>
+          <Link className="underline" href="/portal/admin/policies">Policies</Link>
+          <Link className="underline" href="/portal/admin/fees">Fees</Link>
+          <Link className="underline" href="/portal/admin/admissions">Admissions</Link>
+          <Link className="underline" href="/portal/admin/programs">Programs</Link>
+          <Link className="underline" href="/portal/admin/academics">Academics</Link>
         </nav>
       </aside>
       <section>{children}</section>
