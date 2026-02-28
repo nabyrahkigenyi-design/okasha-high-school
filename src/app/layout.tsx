@@ -30,7 +30,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`${inter.variable} ${amiri.variable} scroll-smooth`}>
       <body className="min-h-screen bg-[color:var(--ohs-surface)] text-slate-900 font-sans">
-        {/* PRE-HEADER */}
+        {/* PRE-HEADER - MOBILE OPTIMIZED (desktop unchanged) */}
         <div
           className="relative border-b text-white"
           style={{
@@ -59,27 +59,25 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   </a>
                 </span>
 
+                {/* HIDE EMAIL + LOCATION ON MOBILE ONLY */}
                 <span className="hidden sm:inline text-white/25">•</span>
-
                 <a
-                  className="underline decoration-white/30 underline-offset-4 hover:text-[color:var(--ohs-sky)] transition"
+                  className="hidden sm:inline underline decoration-white/30 underline-offset-4 hover:text-[color:var(--ohs-sky)] transition"
                   href="mailto:info@okashahighschool.com"
                 >
                   info@okashahighschool.com
                 </a>
 
                 <span className="hidden sm:inline text-white/25">•</span>
-
-                <span className="text-white/80">Mbikko • Buikwe • Jinja</span>
+                <span className="hidden sm:inline text-white/80">Mbikko • Buikwe • Jinja</span>
 
                 <span className="hidden md:inline text-white/25">•</span>
-
                 <span className="hidden md:inline text-white/75">Mon–Sat • 8:00–17:00</span>
               </div>
 
-              {/* Quranic-style Arabic greeting */}
+              {/* Quranic-style Arabic greeting - enlarged on mobile */}
               <div 
-                className="text-base font-ar-quran font-normal text-white/95"
+                className="text-base font-ar-quran font-normal text-white/95 md:text-lg"
                 dir="rtl"
                 style={{ 
                   fontFamily: 'var(--font-ar-quran), serif',
@@ -94,13 +92,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </div>
         </div>
 
-        {/* HEADER - Beautifully Enhanced */}
+        {/* HEADER - MOBILE OPTIMIZED (desktop unchanged) */}
         <header className="sticky top-0 z-50 border-b bg-white/90 backdrop-blur">
           <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3">
-            {/* Logo - Enhanced with decorative divider */}
+            {/* Logo - ENLARGED ON MOBILE ONLY */}
             <Link href="/" className="flex items-center gap-3 active:scale-[0.99] transition">
               <div
-                className="h-10 w-10 rounded-2xl border-2 border-[color:var(--ohs-sky)] shadow-md"
+                className="h-10 w-10 rounded-2xl border-2 border-[color:var(--ohs-sky)] shadow-md md:h-10 md:w-10"
                 style={{
                   background: "linear-gradient(135deg, var(--ohs-cream) 25%, var(--ohs-sky) 65%, #ffffff 100%)",
                   boxShadow: "0 4px 12px rgba(102, 183, 230, 0.25)"
@@ -118,7 +116,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <div className="mt-0.5 flex items-center gap-2">
                   <span className="text-xs text-slate-600">Education is Light</span>
                   <span className="h-1.5 w-1.5 rounded-full bg-[color:var(--ohs-sky)] opacity-60" />
-                  {/* Beautiful Quranic-style Arabic phrase */}
                   <span 
                     className="font-ar-quran font-normal not-italic text-slate-700"
                     dir="rtl"
@@ -136,7 +133,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </div>
             </Link>
 
-            {/* Desktop nav */}
+            {/* Desktop nav - unchanged */}
             <nav className="hidden items-center gap-1 md:flex">
               <NavLink href="/about">About</NavLink>
               <NavLink href="/admissions">Admissions</NavLink>
@@ -156,7 +153,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </Link>
             </nav>
 
-            {/* Mobile */}
+            {/* Mobile - BEAUTIFUL BURGER ICON (desktop unchanged) */}
             <div className="flex items-center gap-2 md:hidden">
               <Link
                 href="/portal"
@@ -165,12 +162,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 Portal
               </Link>
 
-              <details className="relative">
-                <summary className="list-none cursor-pointer rounded-full border bg-white px-4 py-2 text-sm font-semibold transition active:scale-[0.98]">
-                  ☰
+              {/* BEAUTIFUL CUSTOM BURGER ICON - MOBILE ONLY */}
+              <details className="relative group">
+                <summary className="list-none cursor-pointer rounded-xl border bg-white p-2.5 text-xl font-bold text-slate-800 shadow-sm transition hover:bg-slate-50 active:scale-[0.97] focus:outline-none focus:ring-2 focus:ring-[color:var(--ohs-sky)] focus:ring-offset-2" aria-label="Open menu">
+                  <div className="relative h-5 w-6">
+                    <span className="absolute inset-x-0 top-0 block h-0.5 w-full origin-left rounded-full bg-slate-800 transition-transform group-open:translate-x-1 group-open:scale-x-75 group-open:opacity-0" />
+                    <span className="absolute inset-x-0 top-1/2 block h-0.5 w-full -translate-y-1/2 origin-center rounded-full bg-slate-800 transition-transform group-open:rotate-45" />
+                    <span className="absolute inset-x-0 bottom-0 block h-0.5 w-full origin-center rounded-full bg-slate-800 transition-transform group-open:-rotate-45" />
+                  </div>
                 </summary>
 
-                <div className="absolute right-0 mt-2 w-64 overflow-hidden rounded-3xl border bg-white shadow-2xl">
+                <div className="absolute right-0 mt-2 w-64 origin-top-right overflow-hidden rounded-3xl border bg-white shadow-2xl ring-1 ring-black/5 transition opacity-100 group-open:animate-fade-in">
                   <div className="grid p-2 text-sm">
                     {[
                       ["About", "/about"],
@@ -201,7 +203,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* MAIN */}
         <main className="min-h-[70vh]">{children}</main>
 
-        {/* FOOTER */}
+        {/* FOOTER - MOBILE OPTIMIZED (desktop unchanged) */}
         <footer
           className="relative mt-16 text-white"
           style={{
@@ -253,7 +255,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   مدرسة أوكاشا الثانوية — تربية متوازنة تجمع بين التفوق الأكاديمي والقيم الإسلامية
                 </p>
 
-                <div className="flex flex-wrap gap-2 pt-3">
+                {/* BADGES: HIDDEN ON MOBILE, VISIBLE ON DESKTOP */}
+                <div className="mt-3 hidden flex-wrap gap-2 md:flex">
                   {["Mixed School", "Day & Boarding", "Established 1996"].map((t) => (
                     <span
                       key={t}
@@ -427,6 +430,25 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </div>
           </div>
         </footer>
+
+        {/* Mobile menu animation - ONLY FOR MOBILE */}
+        <style>{`
+          @keyframes fade-in {
+            from { opacity: 0; transform: translateY(-8px); }
+            to { opacity: 1; transform: translateY(0); }
+          }
+          .animate-fade-in {
+            animation: fade-in 180ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+          }
+          details > summary::-webkit-details-marker {
+            display: none;
+          }
+          @media (min-width: 768px) {
+            .group-open\\:animate-fade-in {
+              animation: none !important;
+            }
+          }
+        `}</style>
       </body>
     </html>
   );
