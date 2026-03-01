@@ -67,7 +67,7 @@ export default function PublicHeader() {
       {/* HEADER BAR */}
       <header className="sticky top-0 z-50 border-b bg-white/90 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3">
-          {/* Logo (kept same as you had) */}
+          {/* Logo */}
           <Link href="/" className="flex items-center gap-3 active:scale-[0.99] transition">
             <div
               className="h-10 w-10 rounded-2xl border-2 border-[color:var(--ohs-sky)] shadow-md"
@@ -136,7 +136,7 @@ export default function PublicHeader() {
               Portal
             </Link>
 
-            {/* NO BOX: icons outside the box */}
+            {/* NO BOX icons */}
             <button
               type="button"
               aria-label={open ? "Close menu" : "Open menu"}
@@ -149,34 +149,36 @@ export default function PublicHeader() {
         </div>
       </header>
 
-      {/* FULL SCREEN MOBILE MENU (premium animation) */}
+      {/* FULL SCREEN MOBILE MENU */}
       <div
         className={[
           "fixed inset-0 z-[60] md:hidden",
           open ? "pointer-events-auto" : "pointer-events-none",
         ].join(" ")}
+        aria-hidden={!open}
       >
         {/* Backdrop */}
         <div
           onClick={() => setOpen(false)}
           className={[
-            "absolute inset-0 bg-black/40 backdrop-blur-[2px]",
+            "absolute inset-0 bg-black/45",
             "transition-opacity duration-300",
             open ? "opacity-100" : "opacity-0",
           ].join(" ")}
         />
 
-        {/* Panel */}
+        {/* Panel (flex column so middle can scroll, CTA stays reachable) */}
         <div
           className={[
             "absolute inset-0 bg-white",
-            "transition-[opacity,transform] duration-300",
+            "flex h-full flex-col",
+            "transition-[opacity,transform,filter] duration-300",
             "ease-[cubic-bezier(0.16,1,0.3,1)]",
-            open ? "opacity-100 translate-y-0" : "opacity-0 translate-y-3",
+            open ? "opacity-100 translate-y-0 blur-0" : "opacity-0 translate-y-3 blur-[1px]",
           ].join(" ")}
-          style={{ boxShadow: "0 20px 80px rgba(0,0,0,0.28)" }}
+          style={{ boxShadow: "0 20px 80px rgba(0,0,0,0.30)" }}
         >
-          {/* Top bar inside overlay */}
+          {/* Top bar */}
           <div className="flex items-center justify-between border-b px-5 py-4">
             <div className="text-sm font-extrabold tracking-wide text-slate-900">
               NAVIGATION
@@ -191,21 +193,27 @@ export default function PublicHeader() {
             </button>
           </div>
 
-          {/* Links */}
-          <div className="px-5 py-5">
+          {/* Scroll area */}
+          <div className="flex-1 overflow-y-auto px-5 py-5">
+            <div className="mb-3 text-xs font-semibold text-slate-500">
+              Explore the school website
+            </div>
+
             <div className="grid gap-2">
-              {items.map(([label, href]) => (
+              {items.map(([label, href], i) => (
                 <Link
                   key={href}
                   href={href}
-                  onClick={() => setOpen(false)} // close immediately on tap
+                  onClick={() => setOpen(false)}
                   className={[
                     "group flex items-center justify-between",
                     "rounded-2xl border border-slate-200 bg-white",
                     "px-4 py-4 text-base font-semibold text-slate-900",
                     "shadow-sm transition active:scale-[0.99]",
                     "hover:border-slate-300 hover:shadow-md",
+                    open ? "animate-menu-item" : "",
                   ].join(" ")}
+                  style={{ animationDelay: `${90 + i * 45}ms` }}
                 >
                   <span>{label}</span>
                   <span className="text-slate-400 transition group-hover:text-[color:var(--ohs-sky)]">
@@ -215,22 +223,43 @@ export default function PublicHeader() {
               ))}
             </div>
 
-            <div className="mt-6">
-              <Link
-                href="/portal"
-                onClick={() => setOpen(false)}
-                className="inline-flex w-full items-center justify-center rounded-2xl bg-gradient-to-r from-[color:var(--ohs-dark-green)] to-[color:var(--ohs-charcoal)] px-5 py-4 text-base font-extrabold text-white shadow-lg transition active:scale-[0.99]"
-              >
-                Go to Portal
-              </Link>
-            </div>
+            {/* Extra spacing so last link isn't hidden behind sticky CTA */}
+            <div className="h-24" />
+          </div>
 
-            <div className="mt-6 text-center text-xs text-slate-500">
+          {/* Sticky bottom CTA (always accessible) */}
+          <div className="sticky bottom-0 border-t bg-white/90 px-5 py-4 backdrop-blur">
+            <Link
+              href="/portal"
+              onClick={() => setOpen(false)}
+              className="inline-flex w-full items-center justify-center rounded-2xl bg-gradient-to-r from-[color:var(--ohs-dark-green)] to-[color:var(--ohs-charcoal)] px-5 py-4 text-base font-extrabold text-white shadow-lg transition active:scale-[0.99]"
+            >
+              Go to Portal
+            </Link>
+
+            <div className="mt-2 text-center text-[11px] text-slate-500">
               Tap outside or press <span className="font-semibold">Esc</span> to close
             </div>
           </div>
         </div>
       </div>
+
+      {/* Premium animation keyframes + reduced motion support */}
+      <style>{`
+        @media (prefers-reduced-motion: reduce) {
+          .animate-menu-item { animation: none !important; }
+        }
+
+        @keyframes menu-item-in {
+          from { opacity: 0; transform: translateY(10px) scale(0.99); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        .animate-menu-item {
+          opacity: 0;
+          animation: menu-item-in 420ms cubic-bezier(0.16,1,0.3,1) forwards;
+        }
+      `}</style>
     </>
   );
 }

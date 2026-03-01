@@ -37,25 +37,26 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           />
 
           <div className="relative mx-auto max-w-6xl px-4 py-2.5">
-            {/* Make it one row so it never becomes tall on mobile */}
             <div className="flex items-center justify-between gap-3">
               <div className="flex min-w-0 items-center gap-2 text-xs font-semibold text-white/90">
-                {/* Mobile Call Button */}
+                {/* Mobile Call Button (no gradient, same pill style) */}
                 <a
                   href="tel:+256740235451"
-                  className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-gradient-to-r from-[color:var(--ohs-sky)] to-[color:var(--ohs-cream)] px-4 py-1.5 text-white shadow-md transition hover:opacity-90 active:scale-[0.98] md:hidden"
+                  className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 md:hidden transition hover:bg-white/10 active:scale-[0.98]"
                 >
-                  <PhoneCall className="h-4 w-4 text-white" />
-                  <span>Call Now</span>
+                  <PhoneCall className="h-4 w-4 text-[color:var(--ohs-sky)]" />
+                  <span className="whitespace-nowrap">Call Now</span>
                 </a>
 
                 {/* Mobile Location */}
                 <span className="inline-flex min-w-0 items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 md:hidden">
                   <MapPin className="h-3.5 w-3.5 text-[color:var(--ohs-sky)]" />
-                  <span className="truncate whitespace-nowrap">Mbikko, Buikwe</span>
+                  <span className="truncate whitespace-nowrap">
+                    Mbikko Hill • 5km from Jinja
+                  </span>
                 </span>
 
-                {/* Desktop (unchanged content) */}
+                {/* DESKTOP: Original content unchanged */}
                 <span className="hidden md:inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1">
                   <span className="h-1.5 w-1.5 rounded-full bg-[color:var(--ohs-sky)]" />
                   Admissions
@@ -82,7 +83,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <span className="hidden lg:inline text-white/75">Mon–Sat • 8:00–17:00</span>
               </div>
 
-              {/* Arabic greeting REMOVED on mobile; show only on md+ */}
+              {/* Arabic greeting hidden on mobile; show only on md+ */}
               <div
                 className="hidden md:block text-base font-ar-quran font-normal text-white/95 md:text-lg"
                 dir="rtl"
@@ -99,10 +100,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </div>
         </div>
 
-        {/* HEADER (client component with full-screen mobile nav + premium animation) */}
+        {/* HEADER */}
         <PublicHeader />
 
-        {/* MAIN */}
         <main className="min-h-[70vh]">{children}</main>
 
         {/* FOOTER - unchanged (your original footer code preserved) */}
