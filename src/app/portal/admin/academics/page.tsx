@@ -45,6 +45,42 @@ function Banner({ ok, err, okText }: { ok?: string; err?: string; okText: string
   );
 }
 
+function SearchBar({
+  tab,
+  showInactive,
+  q,
+  placeholder,
+}: {
+  tab: string;
+  showInactive: boolean;
+  q: string;
+  placeholder: string;
+}) {
+  return (
+    <form method="get" className="mt-3 flex gap-2">
+      <input type="hidden" name="tab" value={tab} />
+      {showInactive ? <input type="hidden" name="showInactive" value="1" /> : null}
+
+      <input
+        className="w-full rounded-lg border px-3 py-2 text-sm"
+        name="q"
+        defaultValue={q}
+        placeholder={placeholder}
+      />
+
+      <button className="rounded-lg border px-3 py-2 text-sm" type="submit">
+        Search
+      </button>
+
+      {q ? (
+        <Link className="rounded-lg border px-3 py-2 text-sm" href={`/portal/admin/academics?tab=${tab}${showInactive ? "&showInactive=1" : ""}`}>
+          Clear
+        </Link>
+      ) : null}
+    </form>
+  );
+}
+
 export default async function AdminAcademicsPage({
   searchParams,
 }: {
@@ -56,6 +92,11 @@ export default async function AdminAcademicsPage({
     ok?: string;
     err?: string;
     showInactive?: string;
+
+    // new search params
+    q?: string; // used on classes/subjects tabs
+    qStudent?: string; // used on enrollments tab
+    qClass?: string; // used on enrollments tab
   }>;
 }) {
   await requireRole(["admin"]);
@@ -64,19 +105,33 @@ export default async function AdminAcademicsPage({
   const tab = params.tab ?? "terms";
   const showInactive = params.showInactive === "1";
 
+  const q = (params.q ?? "").trim();
+  const qStudent = (params.qStudent ?? "").trim();
+  const qClass = (params.qClass ?? "").trim();
+
   const terms = await listTerms();
 
-  const classes = await listClasses({ includeInactive: showInactive && tab === "classes" });
-  const subjects = await listSubjects({ includeInactive: showInactive && tab === "subjects" });
+  const classes =
+    tab === "classes"
+      ? await listClasses({ includeInactive: showInactive, q })
+      : // for other tabs we usually want active classes, but for enrollments we also want search
+        await listClasses({ includeInactive: false, q: tab === "enrollments" ? qClass : "" });
+
+  const subjects =
+    tab === "subjects"
+      ? await listSubjects({ includeInactive: showInactive, q })
+      : await listSubjects({ includeInactive: false });
 
   const selectedId = params.id ? Number(params.id) : null;
 
   const teachers = tab === "assignments" ? await listTeachers() : [];
   const assignments = tab === "assignments" ? await listAssignments() : [];
+
   const secularAssignments = assignments.filter((a: any) => a.class_groups?.track_key !== "islamic");
   const islamicAssignments = assignments.filter((a: any) => a.class_groups?.track_key === "islamic");
 
-  const students = tab === "enrollments" ? await listStudents() : [];
+  const students = tab === "enrollments" ? await listStudents({ q: qStudent, limit: 500 }) : [];
+
   const termId =
     params.termId ? Number(params.termId) : (terms.find((t: any) => t.is_active)?.id ?? null);
 
@@ -200,11 +255,13 @@ export default async function AdminAcademicsPage({
             <h1 className="text-xl font-semibold">Class</h1>
             <Banner ok={params.ok} err={params.err} okText="Saved." />
 
-            <div className="mt-2">
+            <div className="mt-2 flex items-center justify-between gap-3">
               <Link className="text-sm underline" href={toggleInactiveHref("classes")}>
                 {showInactive ? "Hide inactive" : "Show inactive"}
               </Link>
             </div>
+
+            <SearchBar tab="classes" showInactive={showInactive} q={q} placeholder="Search classes (e.g. S1A, S2, ...)" />
 
             <form action={upsertClass} className="mt-4 grid gap-3">
               <input type="hidden" name="id" value={selectedId ?? ""} />
@@ -306,6 +363,8 @@ export default async function AdminAcademicsPage({
               </Link>
             </div>
 
+            <SearchBar tab="subjects" showInactive={showInactive} q={q} placeholder="Search subjects (name or code)" />
+
             <form action={upsertSubject} className="mt-4 grid gap-3">
               <input type="hidden" name="id" value={selectedId ?? ""} />
               <label className="grid gap-1">
@@ -332,10 +391,6 @@ export default async function AdminAcademicsPage({
                 Save
               </button>
             </form>
-
-            <div className="mt-3 text-xs text-slate-500">
-              Tip: If you reuse an existing Code, the system will reactivate/update the old subject instead of creating a duplicate.
-            </div>
           </section>
 
           <section className="rounded-2xl border bg-white p-5">
@@ -397,141 +452,7 @@ export default async function AdminAcademicsPage({
         </div>
       ) : null}
 
-      {/* ENROLLMENTS: grouped overview by default */}
-      {tab === "enrollments" ? (
-        <div className="grid gap-6 lg:grid-cols-2">
-          <section className="rounded-2xl border bg-white p-5">
-            <h1 className="text-xl font-semibold">Enrollments</h1>
-            <p className="mt-1 text-sm text-slate-600">Add / move a student into a class for a term.</p>
-
-            <Banner ok={params.ok} err={params.err} okText="Enrollment saved." />
-
-            <form action={addEnrollment} className="mt-4 grid gap-3">
-              <label className="grid gap-1">
-                <span className="text-sm">Term</span>
-                <select className="rounded-lg border px-3 py-2" name="term_id" defaultValue={termId ?? undefined}>
-                  {terms.map((t: any) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}{t.is_active ? " (active)" : ""}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="grid gap-1">
-                <span className="text-sm">Class</span>
-                <select
-                  className="rounded-lg border px-3 py-2"
-                  name="class_id"
-                  // ✅ for the form we can still default to first class if none selected
-                  defaultValue={classId ?? classes[0]?.id ?? undefined}
-                >
-                  {classes.map((c: any) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} {c.track_key === "islamic" ? "(Islamic)" : "(Secular)"}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="grid gap-1">
-                <span className="text-sm">Student</span>
-                <select className="rounded-lg border px-3 py-2" name="student_id">
-                  {students.map((s: any) => (
-                    <option key={s.id} value={s.id}>{s.full_name}</option>
-                  ))}
-                </select>
-              </label>
-
-              <button className="rounded-xl px-4 py-2 font-medium text-white"
-                style={{ background: "var(--ohs-dark-green)" }} type="submit">
-                Add / Move enrollment
-              </button>
-            </form>
-          </section>
-
-          <section className="rounded-2xl border bg-white p-5">
-            <h2 className="text-lg font-semibold">
-              {termId ? `Enrollment overview (Term ${termId})` : "Enrollment overview"}
-            </h2>
-
-            {/* If classId is selected, show full list. Otherwise show per-class groupings */}
-            {termId && classId ? (
-              <>
-                <p className="mt-1 text-sm text-slate-600">Class: {classId}</p>
-                <div className="mt-3 divide-y">
-                  {enrollments.map((e: any) => (
-                    <div key={e.id} className="py-3 px-2 flex items-center justify-between gap-4">
-                      <div className="font-medium">{e.students?.full_name}</div>
-                      <form action={deleteEnrollment}>
-                        <input type="hidden" name="id" value={e.id} />
-                        <input type="hidden" name="term_id" value={termId} />
-                        <input type="hidden" name="class_id" value={classId} />
-                        <button className="text-sm text-red-600 underline" type="submit">remove</button>
-                      </form>
-                    </div>
-                  ))}
-                  {enrollments.length === 0 ? (
-                    <div className="py-6 text-sm text-slate-600">No students in this class yet.</div>
-                  ) : null}
-                </div>
-
-                <div className="mt-4">
-                  <Link className="text-sm underline" href={`/portal/admin/academics?tab=enrollments&termId=${termId}`}>
-                    Back to overview
-                  </Link>
-                </div>
-              </>
-            ) : (
-              <div className="mt-4 grid gap-6">
-                {[
-                  { title: "Secular", items: secularOverview },
-                  { title: "Islamic Theology", items: islamicOverview },
-                ].map((group) => (
-                  <div key={group.title}>
-                    <div className="text-sm font-semibold">{group.title}</div>
-                    <div className="mt-2 grid gap-3">
-                      {group.items.map((x: any) => (
-                        <div key={x.class.id} className="rounded-xl border p-4">
-                          <div className="flex items-center justify-between gap-3">
-                            <div>
-                              <div className="font-medium">{x.class.name}</div>
-                              <div className="text-xs text-slate-500">{x.count} enrolled</div>
-                            </div>
-                            <Link
-                              className="text-sm underline"
-                              href={`/portal/admin/academics?tab=enrollments&termId=${termId}&classId=${x.class.id}`}
-                            >
-                              View all
-                            </Link>
-                          </div>
-
-                          <div className="mt-3 text-sm text-slate-700">
-                            {x.preview.length === 0 ? (
-                              <div className="text-slate-500">No students yet.</div>
-                            ) : (
-                              <ul className="list-disc pl-5">
-                                {x.preview.map((e: any) => (
-                                  <li key={e.id}>{e.students?.full_name}</li>
-                                ))}
-                              </ul>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                      {group.items.length === 0 ? (
-                        <div className="text-sm text-slate-600">No classes found in this track.</div>
-                      ) : null}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-        </div>
-      ) : null}
-
-      {/* ASSIGNMENTS tab stays as you had it; we’ll enhance next */}
+      {/* ASSIGNMENTS */}
       {tab === "assignments" ? (
         <div className="grid gap-6 lg:grid-cols-2">
           <section className="rounded-2xl border bg-white p-5">
@@ -592,6 +513,9 @@ export default async function AdminAcademicsPage({
                     </form>
                   </div>
                 ))}
+                {secularAssignments.length === 0 ? (
+                  <div className="py-4 px-3 text-sm text-slate-600">None.</div>
+                ) : null}
               </div>
             </div>
 
@@ -610,8 +534,191 @@ export default async function AdminAcademicsPage({
                     </form>
                   </div>
                 ))}
+                {islamicAssignments.length === 0 ? (
+                  <div className="py-4 px-3 text-sm text-slate-600">None.</div>
+                ) : null}
               </div>
             </div>
+          </section>
+        </div>
+      ) : null}
+
+      {/* ENROLLMENTS */}
+      {tab === "enrollments" ? (
+        <div className="grid gap-6 lg:grid-cols-2">
+          <section className="rounded-2xl border bg-white p-5">
+            <h1 className="text-xl font-semibold">Enrollments</h1>
+            <p className="mt-1 text-sm text-slate-600">Add / move a student into a class for a term.</p>
+
+            <Banner ok={params.ok} err={params.err} okText="Enrollment saved." />
+
+            {/* Student search */}
+            <form method="get" className="mt-3 flex gap-2">
+              <input type="hidden" name="tab" value="enrollments" />
+              {termId ? <input type="hidden" name="termId" value={String(termId)} /> : null}
+              {classId ? <input type="hidden" name="classId" value={String(classId)} /> : null}
+              {qClass ? <input type="hidden" name="qClass" value={qClass} /> : null}
+
+              <input
+                className="w-full rounded-lg border px-3 py-2 text-sm"
+                name="qStudent"
+                defaultValue={qStudent}
+                placeholder="Search student name…"
+              />
+              <button className="rounded-lg border px-3 py-2 text-sm" type="submit">Search</button>
+              {qStudent ? (
+                <Link
+                  className="rounded-lg border px-3 py-2 text-sm"
+                  href={`/portal/admin/academics?tab=enrollments${termId ? `&termId=${termId}` : ""}${classId ? `&classId=${classId}` : ""}${qClass ? `&qClass=${encodeURIComponent(qClass)}` : ""}`}
+                >
+                  Clear
+                </Link>
+              ) : null}
+            </form>
+
+            <form action={addEnrollment} className="mt-4 grid gap-3">
+              <label className="grid gap-1">
+                <span className="text-sm">Term</span>
+                <select className="rounded-lg border px-3 py-2" name="term_id" defaultValue={termId ?? undefined}>
+                  {terms.map((t: any) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}{t.is_active ? " (active)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="grid gap-1">
+                <span className="text-sm">Class</span>
+                <select className="rounded-lg border px-3 py-2" name="class_id" defaultValue={classId ?? classes[0]?.id ?? undefined}>
+                  {classes.map((c: any) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} {c.track_key === "islamic" ? "(Islamic)" : "(Secular)"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="grid gap-1">
+                <span className="text-sm">Student</span>
+                <select className="rounded-lg border px-3 py-2" name="student_id">
+                  {students.map((s: any) => (
+                    <option key={s.id} value={s.id}>{s.full_name}</option>
+                  ))}
+                </select>
+                {qStudent ? (
+                  <div className="text-xs text-slate-500 mt-1">
+                    Showing filtered results for: <span className="font-mono">{qStudent}</span>
+                  </div>
+                ) : null}
+              </label>
+
+              <button className="rounded-xl px-4 py-2 font-medium text-white"
+                style={{ background: "var(--ohs-dark-green)" }} type="submit">
+                Add / Move enrollment
+              </button>
+            </form>
+
+            {/* Class search for overview */}
+            <form method="get" className="mt-5 flex gap-2">
+              <input type="hidden" name="tab" value="enrollments" />
+              {termId ? <input type="hidden" name="termId" value={String(termId)} /> : null}
+              {qStudent ? <input type="hidden" name="qStudent" value={qStudent} /> : null}
+
+              <input
+                className="w-full rounded-lg border px-3 py-2 text-sm"
+                name="qClass"
+                defaultValue={qClass}
+                placeholder="Search class name…"
+              />
+              <button className="rounded-lg border px-3 py-2 text-sm" type="submit">Search</button>
+              {qClass ? (
+                <Link
+                  className="rounded-lg border px-3 py-2 text-sm"
+                  href={`/portal/admin/academics?tab=enrollments${termId ? `&termId=${termId}` : ""}${qStudent ? `&qStudent=${encodeURIComponent(qStudent)}` : ""}`}
+                >
+                  Clear
+                </Link>
+              ) : null}
+            </form>
+          </section>
+
+          <section className="rounded-2xl border bg-white p-5">
+            <h2 className="text-lg font-semibold">
+              {termId ? `Enrollment overview (Term ${termId})` : "Enrollment overview"}
+            </h2>
+
+            {termId && classId ? (
+              <>
+                <p className="mt-1 text-sm text-slate-600">Class: {classId}</p>
+                <div className="mt-3 divide-y">
+                  {enrollments.map((e: any) => (
+                    <div key={e.id} className="py-3 px-2 flex items-center justify-between gap-4">
+                      <div className="font-medium">{e.students?.full_name}</div>
+                      <form action={deleteEnrollment}>
+                        <input type="hidden" name="id" value={e.id} />
+                        <input type="hidden" name="term_id" value={termId} />
+                        <input type="hidden" name="class_id" value={classId} />
+                        <button className="text-sm text-red-600 underline" type="submit">remove</button>
+                      </form>
+                    </div>
+                  ))}
+                  {enrollments.length === 0 ? (
+                    <div className="py-6 text-sm text-slate-600">No students in this class yet.</div>
+                  ) : null}
+                </div>
+
+                <div className="mt-4">
+                  <Link className="text-sm underline" href={`/portal/admin/academics?tab=enrollments&termId=${termId}${qStudent ? `&qStudent=${encodeURIComponent(qStudent)}` : ""}${qClass ? `&qClass=${encodeURIComponent(qClass)}` : ""}`}>
+                    Back to overview
+                  </Link>
+                </div>
+              </>
+            ) : (
+              <div className="mt-4 grid gap-6">
+                {[
+                  { title: "Secular", items: secularOverview },
+                  { title: "Islamic Theology", items: islamicOverview },
+                ].map((group) => (
+                  <div key={group.title}>
+                    <div className="text-sm font-semibold">{group.title}</div>
+                    <div className="mt-2 grid gap-3">
+                      {group.items.map((x: any) => (
+                        <div key={x.class.id} className="rounded-xl border p-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <div className="font-medium">{x.class.name}</div>
+                              <div className="text-xs text-slate-500">{x.count} enrolled</div>
+                            </div>
+                            <Link
+                              className="text-sm underline"
+                              href={`/portal/admin/academics?tab=enrollments&termId=${termId}&classId=${x.class.id}${qStudent ? `&qStudent=${encodeURIComponent(qStudent)}` : ""}${qClass ? `&qClass=${encodeURIComponent(qClass)}` : ""}`}
+                            >
+                              View all
+                            </Link>
+                          </div>
+
+                          <div className="mt-3 text-sm text-slate-700">
+                            {x.preview.length === 0 ? (
+                              <div className="text-slate-500">No students yet.</div>
+                            ) : (
+                              <ul className="list-disc pl-5">
+                                {x.preview.map((e: any) => (
+                                  <li key={e.id}>{e.students?.full_name}</li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                      {group.items.length === 0 ? (
+                        <div className="text-sm text-slate-600">No classes found in this track.</div>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
         </div>
       ) : null}

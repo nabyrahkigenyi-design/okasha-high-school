@@ -14,61 +14,84 @@ export async function listTerms() {
   return data ?? [];
 }
 
-export async function listClasses(opts?: { includeInactive?: boolean }) {
+export async function listClasses(opts?: { includeInactive?: boolean; q?: string }) {
   await requireRole(["admin"]);
   const sb = supabaseAdmin();
 
-  let q = sb
+  let query = sb
     .from("class_groups")
     .select("id, name, level, track_key, is_active, updated_at")
     .order("name", { ascending: true });
 
-  if (!opts?.includeInactive) q = q.eq("is_active", true);
+  if (!opts?.includeInactive) query = query.eq("is_active", true);
 
-  const { data, error } = await q;
+  const q = (opts?.q ?? "").trim();
+  if (q) {
+    // Search by name or level
+    query = query.or(`name.ilike.%${q}%,level.ilike.%${q}%`);
+  }
+
+  const { data, error } = await query;
   if (error) throw new Error(error.message);
   return data ?? [];
 }
 
-export async function listSubjects(opts?: { includeInactive?: boolean }) {
+export async function listSubjects(opts?: { includeInactive?: boolean; q?: string }) {
   await requireRole(["admin"]);
   const sb = supabaseAdmin();
 
-  let q = sb
+  let query = sb
     .from("subjects")
     .select("id, code, name, track, is_active, updated_at")
     .order("name", { ascending: true });
 
-  if (!opts?.includeInactive) q = q.eq("is_active", true);
+  if (!opts?.includeInactive) query = query.eq("is_active", true);
 
-  const { data, error } = await q;
+  const q = (opts?.q ?? "").trim();
+  if (q) {
+    // Search by name or code
+    query = query.or(`name.ilike.%${q}%,code.ilike.%${q}%`);
+  }
+
+  const { data, error } = await query;
   if (error) throw new Error(error.message);
   return data ?? [];
 }
 
-export async function listTeachers() {
+export async function listTeachers(opts?: { q?: string }) {
   await requireRole(["admin"]);
   const sb = supabaseAdmin();
-  const { data, error } = await sb
+
+  let query = sb
     .from("teachers")
     .select("id, full_name")
     .eq("is_active", true)
     .order("full_name", { ascending: true });
 
+  const q = (opts?.q ?? "").trim();
+  if (q) query = query.ilike("full_name", `%${q}%`);
+
+  const { data, error } = await query;
   if (error) throw new Error(error.message);
   return data ?? [];
 }
 
-export async function listStudents() {
+export async function listStudents(opts?: { q?: string; limit?: number }) {
   await requireRole(["admin"]);
   const sb = supabaseAdmin();
-  const { data, error } = await sb
+
+  let query = sb
     .from("students")
     .select("id, full_name")
     .eq("is_active", true)
-    .order("full_name", { ascending: true })
-    .limit(500);
+    .order("full_name", { ascending: true });
 
+  const q = (opts?.q ?? "").trim();
+  if (q) query = query.ilike("full_name", `%${q}%`);
+
+  query = query.limit(opts?.limit ?? 500);
+
+  const { data, error } = await query;
   if (error) throw new Error(error.message);
   return data ?? [];
 }
