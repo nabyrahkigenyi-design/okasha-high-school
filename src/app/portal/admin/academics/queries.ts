@@ -14,65 +14,34 @@ export async function listTerms() {
   return data ?? [];
 }
 
-export async function listActiveTerms() {
+export async function listClasses(opts?: { includeInactive?: boolean }) {
   await requireRole(["admin"]);
   const sb = supabaseAdmin();
-  const { data, error } = await sb
-    .from("academic_terms")
-    .select("id, name, is_active")
-    .eq("is_active", true)
-    .order("id", { ascending: false });
 
-  if (error) throw new Error(error.message);
-  return data ?? [];
-}
-
-export async function listClasses() {
-  await requireRole(["admin"]);
-  const sb = supabaseAdmin();
-  const { data, error } = await sb
+  let q = sb
     .from("class_groups")
     .select("id, name, level, track_key, is_active, updated_at")
     .order("name", { ascending: true });
 
+  if (!opts?.includeInactive) q = q.eq("is_active", true);
+
+  const { data, error } = await q;
   if (error) throw new Error(error.message);
   return data ?? [];
 }
 
-export async function listActiveClasses() {
+export async function listSubjects(opts?: { includeInactive?: boolean }) {
   await requireRole(["admin"]);
   const sb = supabaseAdmin();
-  const { data, error } = await sb
-    .from("class_groups")
-    .select("id, name")
-    .eq("is_active", true)
-    .order("name", { ascending: true });
 
-  if (error) throw new Error(error.message);
-  return data ?? [];
-}
-
-export async function listSubjects() {
-  await requireRole(["admin"]);
-  const sb = supabaseAdmin();
-  const { data, error } = await sb
+  let q = sb
     .from("subjects")
     .select("id, code, name, track, is_active, updated_at")
     .order("name", { ascending: true });
 
-  if (error) throw new Error(error.message);
-  return data ?? [];
-}
+  if (!opts?.includeInactive) q = q.eq("is_active", true);
 
-export async function listActiveSubjects() {
-  await requireRole(["admin"]);
-  const sb = supabaseAdmin();
-  const { data, error } = await sb
-    .from("subjects")
-    .select("id, code, name")
-    .eq("is_active", true)
-    .order("name", { ascending: true });
-
+  const { data, error } = await q;
   if (error) throw new Error(error.message);
   return data ?? [];
 }
@@ -116,8 +85,8 @@ export async function listAssignments() {
       subject_id,
       teacher_id,
       academic_terms:term_id ( id, name ),
-      class_groups:class_id ( id, name ),
-      subjects:subject_id ( id, name, code ),
+      class_groups:class_id ( id, name, track_key ),
+      subjects:subject_id ( id, name, code, track ),
       teachers:teacher_id ( id, full_name )
     `)
     .order("id", { ascending: false })
@@ -127,7 +96,7 @@ export async function listAssignments() {
   return data ?? [];
 }
 
-export async function listEnrollments(termId: number, classId: number) {
+export async function listEnrollments(termId: number, classId: number, limit = 500) {
   await requireRole(["admin"]);
   const sb = supabaseAdmin();
 
@@ -139,8 +108,24 @@ export async function listEnrollments(termId: number, classId: number) {
     .eq("term_id", termId)
     .eq("class_id", classId)
     .order("id", { ascending: false })
-    .limit(500);
+    .limit(limit);
 
   if (error) throw new Error(error.message);
   return data ?? [];
+}
+
+export async function getEnrollmentCount(termId: number, classId: number) {
+  await requireRole(["admin"]);
+  const sb = supabaseAdmin();
+
+  if (!termId || !classId) return 0;
+
+  const { count, error } = await sb
+    .from("enrollments")
+    .select("id", { count: "exact", head: true })
+    .eq("term_id", termId)
+    .eq("class_id", classId);
+
+  if (error) throw new Error(error.message);
+  return count ?? 0;
 }

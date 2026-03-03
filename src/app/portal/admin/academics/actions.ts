@@ -37,7 +37,7 @@ export async function upsertTerm(formData: FormData): Promise<void> {
       .update({ is_active: false })
       .neq("id", -1);
 
-    if (deactErr) return;
+    if (deactErr) redirect(`/portal/admin/academics?tab=terms&err=${encodeURIComponent(deactErr.message)}`);
   }
 
   const payload = {
@@ -48,18 +48,34 @@ export async function upsertTerm(formData: FormData): Promise<void> {
   };
 
   if (parsed.data.id) {
-    const { error } = await sb()
-      .from("academic_terms")
-      .update(payload)
-      .eq("id", Number(parsed.data.id));
-
-    if (error) return;
+    const { error } = await sb().from("academic_terms").update(payload).eq("id", Number(parsed.data.id));
+    if (error) redirect(`/portal/admin/academics?tab=terms&err=${encodeURIComponent(error.message)}`);
   } else {
     const { error } = await sb().from("academic_terms").insert(payload);
-    if (error) return;
+    if (error) redirect(`/portal/admin/academics?tab=terms&err=${encodeURIComponent(error.message)}`);
   }
 
   revalidatePath("/portal/admin/academics");
+  redirect("/portal/admin/academics?tab=terms&ok=1");
+}
+
+export async function setActiveTerm(fd: FormData): Promise<void> {
+  await requireRole(["admin"]);
+  const id = Number(fd.get("id"));
+  if (!id) return;
+
+  const { error: deactErr } = await sb()
+    .from("academic_terms")
+    .update({ is_active: false })
+    .neq("id", -1);
+
+  if (deactErr) redirect(`/portal/admin/academics?tab=terms&err=${encodeURIComponent(deactErr.message)}`);
+
+  const { error } = await sb().from("academic_terms").update({ is_active: true }).eq("id", id);
+  if (error) redirect(`/portal/admin/academics?tab=terms&err=${encodeURIComponent(error.message)}`);
+
+  revalidatePath("/portal/admin/academics");
+  redirect("/portal/admin/academics?tab=terms&ok=1");
 }
 
 export async function deleteTerm(formData: FormData): Promise<void> {
@@ -67,15 +83,22 @@ export async function deleteTerm(formData: FormData): Promise<void> {
   const id = Number(formData.get("id"));
   if (!id) return;
 
-  // Soft delete instead of hard delete
-  const { error } = await sb()
-    .from("academic_terms")
-    .update({ is_active: false })
-    .eq("id", id);
+  const { error: delErr } = await sb().from("academic_terms").delete().eq("id", id);
 
-  if (error) return;
+  if (delErr) {
+    const { error: archErr } = await sb().from("academic_terms").update({ is_active: false }).eq("id", id);
+
+    revalidatePath("/portal/admin/academics");
+
+    const msg = archErr
+      ? `Failed to delete term: ${delErr.message}. Also failed to archive: ${archErr.message}`
+      : `Term is in use and cannot be deleted. Archived instead. (${delErr.message})`;
+
+    redirect(`/portal/admin/academics?tab=terms&err=${encodeURIComponent(msg)}`);
+  }
 
   revalidatePath("/portal/admin/academics");
+  redirect("/portal/admin/academics?tab=terms&ok=1");
 }
 
 // -------------------- CLASSES --------------------
@@ -109,17 +132,28 @@ export async function upsertClass(formData: FormData): Promise<void> {
   };
 
   if (parsed.data.id) {
-    const { error } = await sb()
-      .from("class_groups")
-      .update(payload)
-      .eq("id", Number(parsed.data.id));
-    if (error) return;
+    const { error } = await sb().from("class_groups").update(payload).eq("id", Number(parsed.data.id));
+    if (error) redirect(`/portal/admin/academics?tab=classes&err=${encodeURIComponent(error.message)}`);
   } else {
     const { error } = await sb().from("class_groups").insert(payload);
-    if (error) return;
+    if (error) redirect(`/portal/admin/academics?tab=classes&err=${encodeURIComponent(error.message)}`);
   }
 
   revalidatePath("/portal/admin/academics");
+  redirect("/portal/admin/academics?tab=classes&ok=1");
+}
+
+export async function setClassActive(fd: FormData): Promise<void> {
+  await requireRole(["admin"]);
+  const id = Number(fd.get("id"));
+  const is_active = String(fd.get("is_active")) === "true";
+  if (!id) return;
+
+  const { error } = await sb().from("class_groups").update({ is_active }).eq("id", id);
+  if (error) redirect(`/portal/admin/academics?tab=classes&err=${encodeURIComponent(error.message)}`);
+
+  revalidatePath("/portal/admin/academics");
+  redirect("/portal/admin/academics?tab=classes&ok=1");
 }
 
 export async function deleteClass(formData: FormData): Promise<void> {
@@ -127,15 +161,22 @@ export async function deleteClass(formData: FormData): Promise<void> {
   const id = Number(formData.get("id"));
   if (!id) return;
 
-  // Soft delete instead of hard delete
-  const { error } = await sb()
-    .from("class_groups")
-    .update({ is_active: false })
-    .eq("id", id);
+  const { error: delErr } = await sb().from("class_groups").delete().eq("id", id);
 
-  if (error) return;
+  if (delErr) {
+    const { error: archErr } = await sb().from("class_groups").update({ is_active: false }).eq("id", id);
+
+    revalidatePath("/portal/admin/academics");
+
+    const msg = archErr
+      ? `Failed to delete class: ${delErr.message}. Also failed to archive: ${archErr.message}`
+      : `Class is in use and cannot be deleted. Archived instead. (${delErr.message})`;
+
+    redirect(`/portal/admin/academics?tab=classes&err=${encodeURIComponent(msg)}`);
+  }
 
   revalidatePath("/portal/admin/academics");
+  redirect("/portal/admin/academics?tab=classes&ok=1");
 }
 
 // -------------------- SUBJECTS --------------------
@@ -161,25 +202,61 @@ export async function upsertSubject(formData: FormData): Promise<void> {
 
   if (!parsed.success) return;
 
-  const payload: any = {
+  const payload = {
     code: parsed.data.code || null,
     name: parsed.data.name,
     track: parsed.data.track,
     is_active: parsed.data.is_active,
   };
 
+  // ✅ UPDATE by id when editing
   if (parsed.data.id) {
-    const { error } = await sb()
-      .from("subjects")
-      .update(payload)
-      .eq("id", Number(parsed.data.id));
-    if (error) return;
-  } else {
-    const { error } = await sb().from("subjects").insert(payload);
-    if (error) return;
+    const { error } = await sb().from("subjects").update(payload).eq("id", Number(parsed.data.id));
+    if (error) redirect(`/portal/admin/academics?tab=subjects&err=${encodeURIComponent(error.message)}`);
+
+    revalidatePath("/portal/admin/academics");
+    redirect("/portal/admin/academics?tab=subjects&ok=1");
   }
 
+  // ✅ NEW subject:
+  // If code exists already (even inactive), revive + update instead of insert
+  if (payload.code) {
+    const { data: existing, error: findErr } = await sb()
+      .from("subjects")
+      .select("id")
+      .eq("code", payload.code)
+      .maybeSingle();
+
+    if (findErr) redirect(`/portal/admin/academics?tab=subjects&err=${encodeURIComponent(findErr.message)}`);
+
+    if (existing?.id) {
+      const { error: updErr } = await sb().from("subjects").update({ ...payload, is_active: true }).eq("id", existing.id);
+      if (updErr) redirect(`/portal/admin/academics?tab=subjects&err=${encodeURIComponent(updErr.message)}`);
+
+      revalidatePath("/portal/admin/academics");
+      redirect("/portal/admin/academics?tab=subjects&ok=1");
+    }
+  }
+
+  // ✅ Otherwise insert fresh
+  const { error } = await sb().from("subjects").insert(payload);
+  if (error) redirect(`/portal/admin/academics?tab=subjects&err=${encodeURIComponent(error.message)}`);
+
   revalidatePath("/portal/admin/academics");
+  redirect("/portal/admin/academics?tab=subjects&ok=1");
+}
+
+export async function setSubjectActive(fd: FormData): Promise<void> {
+  await requireRole(["admin"]);
+  const id = Number(fd.get("id"));
+  const is_active = String(fd.get("is_active")) === "true";
+  if (!id) return;
+
+  const { error } = await sb().from("subjects").update({ is_active }).eq("id", id);
+  if (error) redirect(`/portal/admin/academics?tab=subjects&err=${encodeURIComponent(error.message)}`);
+
+  revalidatePath("/portal/admin/academics");
+  redirect("/portal/admin/academics?tab=subjects&ok=1");
 }
 
 export async function deleteSubject(formData: FormData): Promise<void> {
@@ -187,15 +264,22 @@ export async function deleteSubject(formData: FormData): Promise<void> {
   const id = Number(formData.get("id"));
   if (!id) return;
 
-  // Soft delete
-  const { error } = await sb()
-    .from("subjects")
-    .update({ is_active: false })
-    .eq("id", id);
+  const { error: delErr } = await sb().from("subjects").delete().eq("id", id);
 
-  if (error) return;
+  if (delErr) {
+    const { error: archErr } = await sb().from("subjects").update({ is_active: false }).eq("id", id);
+
+    revalidatePath("/portal/admin/academics");
+
+    const msg = archErr
+      ? `Failed to delete subject: ${delErr.message}. Also failed to archive: ${archErr.message}`
+      : `Subject is in use and cannot be deleted. Archived instead. (${delErr.message})`;
+
+    redirect(`/portal/admin/academics?tab=subjects&err=${encodeURIComponent(msg)}`);
+  }
 
   revalidatePath("/portal/admin/academics");
+  redirect("/portal/admin/academics?tab=subjects&ok=1");
 }
 
 // -------------------- TEACHER ASSIGNMENTS --------------------
@@ -220,9 +304,10 @@ export async function createAssignment(fd: FormData): Promise<void> {
   if (!parsed.success) return;
 
   const { error } = await sb().from("teacher_assignments").insert(parsed.data);
-  if (error) return;
+  if (error) redirect(`/portal/admin/academics?tab=assignments&err=${encodeURIComponent(error.message)}`);
 
   revalidatePath("/portal/admin/academics");
+  redirect("/portal/admin/academics?tab=assignments&ok=1");
 }
 
 export async function deleteAssignment(fd: FormData): Promise<void> {
@@ -231,12 +316,13 @@ export async function deleteAssignment(fd: FormData): Promise<void> {
   if (!id) return;
 
   const { error } = await sb().from("teacher_assignments").delete().eq("id", id);
-  if (error) return;
+  if (error) redirect(`/portal/admin/academics?tab=assignments&err=${encodeURIComponent(error.message)}`);
 
   revalidatePath("/portal/admin/academics");
+  redirect("/portal/admin/academics?tab=assignments&ok=1");
 }
 
-// -------------------- STUDENT ENROLLMENTS --------------------
+// -------------------- ENROLLMENTS --------------------
 
 export async function addEnrollment(formData: FormData): Promise<void> {
   await requireRole(["admin"]);
@@ -251,48 +337,24 @@ export async function addEnrollment(formData: FormData): Promise<void> {
     redirect(`${backUrl}&err=${encodeURIComponent("Missing student, class, or term.")}`);
   }
 
-  // Validate student/class/term (keep your checks if you want)
-  // NOTE: If you want to enroll into inactive terms, remove is_active=true
-  const { data: term, error: termErr } = await sb()
-    .from("academic_terms")
-    .select("id")
-    .eq("id", term_id)
-    .eq("is_active", true)
-    .single();
-  if (termErr || !term) redirect(`${backUrl}&err=${encodeURIComponent(termErr?.message ?? "Term not active.")}`);
-
-  // Does an enrollment already exist for this student+term?
   const { data: existing, error: existingErr } = await sb()
     .from("enrollments")
-    .select("id, class_id")
+    .select("id")
     .eq("student_id", student_id)
     .eq("term_id", term_id)
     .maybeSingle();
 
-  if (existingErr) {
-    redirect(`${backUrl}&err=${encodeURIComponent(existingErr.message)}`);
-  }
+  if (existingErr) redirect(`${backUrl}&err=${encodeURIComponent(existingErr.message)}`);
 
   if (existing) {
-    // Move student to the selected class for this term
-    const { error: updErr } = await sb()
-      .from("enrollments")
-      .update({ class_id })
-      .eq("id", existing.id);
-
+    const { error: updErr } = await sb().from("enrollments").update({ class_id }).eq("id", existing.id);
     if (updErr) redirect(`${backUrl}&err=${encodeURIComponent(updErr.message)}`);
 
     revalidatePath("/portal/admin/academics");
     redirect(`${backUrl}&ok=1`);
   }
 
-  // Otherwise create new enrollment
-  const { error } = await sb().from("enrollments").insert({
-    student_id,
-    class_id,
-    term_id,
-  });
-
+  const { error } = await sb().from("enrollments").insert({ student_id, class_id, term_id });
   if (error) redirect(`${backUrl}&err=${encodeURIComponent(error.message)}`);
 
   revalidatePath("/portal/admin/academics");
