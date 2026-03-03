@@ -25,7 +25,14 @@ import {
 export default async function AdminAcademicsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; id?: string; termId?: string; classId?: string }>;
+  searchParams: Promise<{
+    tab?: string;
+    id?: string;
+    termId?: string;
+    classId?: string;
+    ok?: string;
+    err?: string;
+  }>;
 }) {
   await requireRole(["admin"]);
   const params = await searchParams;
@@ -203,7 +210,7 @@ export default async function AdminAcademicsPage({
                   </div>
                   <form action={deleteSubject}>
                     <input type="hidden" name="id" value={s.id} />
-                    <button type="submit" className="text-sm text-red-600 underline">Delete</button>
+                    <button className="text-sm text-red-600 underline">Delete</button>
                   </form>
                 </div>
               ))}
@@ -286,6 +293,18 @@ export default async function AdminAcademicsPage({
             <h1 className="text-xl font-semibold">Enrollments</h1>
             <p className="mt-1 text-sm text-slate-600">Add students to a class for a term.</p>
 
+            {params.ok ? (
+              <div className="mt-3 rounded-xl border border-green-200 bg-green-50 px-4 py-2 text-sm text-green-800">
+                Enrollment added.
+              </div>
+            ) : null}
+
+            {params.err ? (
+              <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800">
+                {decodeURIComponent(params.err)}
+              </div>
+            ) : null}
+
             <form action={addEnrollment} className="mt-4 grid gap-3">
               <label className="grid gap-1">
                 <span className="text-sm">Term</span>
@@ -333,9 +352,11 @@ export default async function AdminAcademicsPage({
                 <div key={e.id} className="py-3 px-2 flex items-center justify-between gap-4">
                   <div className="font-medium">{e.students?.full_name}</div>
                   <form action={deleteEnrollment}>
-                    <input type="hidden" name="id" value={e.id} />
-                    <button className="text-sm text-red-600 underline" type="submit">remove</button>
-                  </form>
+                   <input type="hidden" name="id" value={e.id} />
+                   <input type="hidden" name="term_id" value={termId ?? ""} />
+                   <input type="hidden" name="class_id" value={classId ?? ""} />
+                <button className="text-sm text-red-600 underline" type="submit">remove</button>
+              </form>
                 </div>
               ))}
               {enrollments.length === 0 ? (

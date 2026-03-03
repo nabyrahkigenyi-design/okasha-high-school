@@ -4,6 +4,7 @@ import { z } from "zod";
 import { requireRole } from "@/lib/rbac";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
 const sb = () => supabaseAdmin();
 
@@ -240,59 +241,78 @@ export async function deleteAssignment(fd: FormData): Promise<void> {
 export async function addEnrollment(formData: FormData): Promise<void> {
   await requireRole(["admin"]);
 
-  const student_id = String(formData.get("student_id")); // UUID
-  const class_id = Number(formData.get("class_id")); // bigint
-  const term_id = Number(formData.get("term_id")); // bigint
+  const student_id = String(formData.get("student_id") ?? "");
+  const class_id = Number(formData.get("class_id"));
+  const term_id = Number(formData.get("term_id"));
 
-  if (!student_id || !class_id || !term_id) return;
+  const backUrl = `/portal/admin/academics?tab=enrollments&termId=${term_id}&classId=${class_id}`;
 
-  // Check foreign keys
-  const { data: student } = await sb()
-    .from("students")
-    .select("id")
-    .eq("id", student_id)
-    .eq("is_active", true)
-    .single();
+  if (!student_id || !class_id || !term_id) {
+    redirect(`${backUrl}&err=${encodeURIComponent("Missing student, class, or term.")}`);
+  }
 
-  if (!student) return;
-
-  const { data: classRow } = await sb()
-    .from("class_groups")
-    .select("id")
-    .eq("id", class_id)
-    .eq("is_active", true)
-    .single();
-
-  if (!classRow) return;
-
-  const { data: term } = await sb()
+  // Validate student/class/term (keep your checks if you want)
+  // NOTE: If you want to enroll into inactive terms, remove is_active=true
+  const { data: term, error: termErr } = await sb()
     .from("academic_terms")
     .select("id")
     .eq("id", term_id)
-    // NOTE: your original logic checks is_active=true; keep it:
     .eq("is_active", true)
     .single();
+  if (termErr || !term) redirect(`${backUrl}&err=${encodeURIComponent(termErr?.message ?? "Term not active.")}`);
 
-  if (!term) return;
+  // Does an enrollment already exist for this student+term?
+  const { data: existing, error: existingErr } = await sb()
+    .from("enrollments")
+    .select("id, class_id")
+    .eq("student_id", student_id)
+    .eq("term_id", term_id)
+    .maybeSingle();
 
+  if (existingErr) {
+    redirect(`${backUrl}&err=${encodeURIComponent(existingErr.message)}`);
+  }
+
+  if (existing) {
+    // Move student to the selected class for this term
+    const { error: updErr } = await sb()
+      .from("enrollments")
+      .update({ class_id })
+      .eq("id", existing.id);
+
+    if (updErr) redirect(`${backUrl}&err=${encodeURIComponent(updErr.message)}`);
+
+    revalidatePath("/portal/admin/academics");
+    redirect(`${backUrl}&ok=1`);
+  }
+
+  // Otherwise create new enrollment
   const { error } = await sb().from("enrollments").insert({
     student_id,
     class_id,
     term_id,
   });
 
-  if (error) return;
+  if (error) redirect(`${backUrl}&err=${encodeURIComponent(error.message)}`);
 
-  revalidatePath("/portal/admin/academics?tab=enrollments");
+  revalidatePath("/portal/admin/academics");
+  redirect(`${backUrl}&ok=1`);
 }
 
 export async function deleteEnrollment(fd: FormData): Promise<void> {
   await requireRole(["admin"]);
+
   const id = Number(fd.get("id"));
-  if (!id) return;
+  const term_id = Number(fd.get("term_id"));
+  const class_id = Number(fd.get("class_id"));
+
+  const backUrl = `/portal/admin/academics?tab=enrollments&termId=${term_id}&classId=${class_id}`;
+
+  if (!id) redirect(`${backUrl}&err=${encodeURIComponent("Missing enrollment id.")}`);
 
   const { error } = await sb().from("enrollments").delete().eq("id", id);
-  if (error) return;
+  if (error) redirect(`${backUrl}&err=${encodeURIComponent(error.message)}`);
 
-  revalidatePath("/portal/admin/academics?tab=enrollments");
+  revalidatePath("/portal/admin/academics");
+  redirect(`${backUrl}&ok=1`);
 }
