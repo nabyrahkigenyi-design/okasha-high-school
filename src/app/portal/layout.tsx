@@ -1,4 +1,5 @@
 import { ReactNode } from "react";
+import Link from "next/link";
 import { requireAuth } from "@/lib/rbac";
 
 export default async function PortalLayout({ children }: { children: ReactNode }) {
@@ -6,17 +7,31 @@ export default async function PortalLayout({ children }: { children: ReactNode }
 
   return (
     <div className="min-h-screen bg-[color:var(--ohs-surface)]">
-      <header className="border-b bg-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-          <div className="font-semibold">
-            OHS Portal <span className="text-xs text-slate-500">({profile.role_key})</span>
+      <header className="sticky top-0 z-40 border-b bg-white/85 backdrop-blur">
+        <div className="mx-auto flex max-w-screen-2xl items-center justify-between px-4 py-3">
+          <Link href="/portal" className="link-soft font-semibold">
+            OHS Portal{" "}
+            <span className="text-xs text-slate-500">({profile.role_key})</span>
+          </Link>
+
+          <div className="flex items-center gap-2">
+            {/* quick role home */}
+            <Link className="portal-btn" href="/portal">
+              Home
+            </Link>
+
+            <form action="/auth/logout" method="post">
+              <button className="portal-btn portal-btn-danger" type="submit">
+                Logout
+              </button>
+            </form>
           </div>
-          <form action="/auth/logout" method="post">
-            <button className="text-sm underline">Logout</button>
-          </form>
         </div>
       </header>
-      <main className="mx-auto max-w-6xl px-4 py-6">{children}</main>
+
+      <main className="mx-auto max-w-screen-2xl px-4 py-6">
+        {children}
+      </main>
     </div>
   );
 }

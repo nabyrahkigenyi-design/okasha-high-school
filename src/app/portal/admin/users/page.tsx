@@ -1,7 +1,49 @@
 import Link from "next/link";
 import { requireRole } from "@/lib/rbac";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { WatermarkedSection } from "@/components/WatermarkedSection";
+import { ToastGate } from "@/components/ToastGate";
+import { ConfirmSubmitButton } from "@/components/ConfirmSubmitButton";
 import { adminCreateUser, adminDeactivateUser, adminPurgeUser } from "./actions";
+
+function Pill({ children }: { children: React.ReactNode }) {
+  return <span className="portal-badge">{children}</span>;
+}
+
+function SectionTitle({
+  title,
+  subtitle,
+  right,
+}: {
+  title: string;
+  subtitle?: string;
+  right?: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-wrap items-start justify-between gap-4">
+      <div>
+        <h1 className="portal-title">{title}</h1>
+        {subtitle ? <p className="portal-subtitle">{subtitle}</p> : null}
+      </div>
+      {right ? <div className="flex flex-wrap items-center gap-2">{right}</div> : null}
+    </div>
+  );
+}
+
+function roleLabel(role: string) {
+  switch (role) {
+    case "admin":
+      return "Admins";
+    case "teacher":
+      return "Teachers";
+    case "parent":
+      return "Parents";
+    case "student":
+      return "Students";
+    default:
+      return "All";
+  }
+}
 
 export default async function AdminUsers({
   searchParams,
@@ -29,17 +71,13 @@ export default async function AdminUsers({
 
   const { data: users } = await query;
 
-  const tab = (k: string) =>
-    `rounded-xl px-3 py-2 text-sm font-medium transition ${
-      role === k ? "bg-[color:var(--ohs-surface)] border" : "hover:bg-slate-50 border border-transparent"
-    }`;
-
   const makeHref = (nextRole: string) => {
     const sp = new URLSearchParams();
     if (nextRole !== "all") sp.set("role", nextRole);
     if (q) sp.set("q", q);
     if (show !== "active") sp.set("show", show);
-    return `/portal/admin/users?${sp.toString()}`;
+    const qs = sp.toString();
+    return qs ? `/portal/admin/users?${qs}` : "/portal/admin/users";
   };
 
   const printHref = () => {
@@ -47,141 +85,209 @@ export default async function AdminUsers({
     if (role !== "all") sp.set("role", role);
     if (q) sp.set("q", q);
     if (show !== "active") sp.set("show", show);
-    return `/portal/admin/users/print?${sp.toString()}`;
+    const qs = sp.toString();
+    return qs ? `/portal/admin/users/print?${qs}` : "/portal/admin/users/print";
   };
 
-  return (
-    <div className="grid gap-6">
-      <div className="rounded-2xl border bg-white p-5">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h1 className="text-xl font-semibold">Users</h1>
-            <p className="mt-1 text-sm text-slate-600">
-              Create, search, deactivate, and export users.
-            </p>
-          </div>
+  const tabClass = (k: string) => `portal-tab ${role === k ? "portal-tab-active" : ""}`;
 
-          <div className="flex items-center gap-2">
-            <Link
-              href={printHref()}
-              className="rounded-xl border bg-white px-3 py-2 text-sm hover:bg-[color:var(--ohs-surface)]"
-            >
-              Print / Save PDF
+  // Toast message based on actions
+  const okText =
+    params.ok && role === "all"
+      ? "Done."
+      : params.ok
+        ? "Done."
+        : "Done.";
+
+  return (
+    <WatermarkedSection tone="portal" variant="mixed">
+      <ToastGate ok={params.ok} err={params.err} okText={okText} />
+
+      <div className="grid gap-6">
+        {/* Header */}
+        <section className="portal-surface p-6">
+          <SectionTitle
+            title="Users"
+            subtitle="Create, search, deactivate, and export users."
+            right={
+              <>
+                <Link className="portal-btn" href={printHref()}>
+                  Print / Save PDF
+                </Link>
+              </>
+            }
+          />
+
+          {/* Tabs */}
+          <div className="portal-tabs mt-4">
+            <Link className={tabClass("all")} href={makeHref("all")}>
+              All
+            </Link>
+            <Link className={tabClass("admin")} href={makeHref("admin")}>
+              Admins
+            </Link>
+            <Link className={tabClass("teacher")} href={makeHref("teacher")}>
+              Teachers
+            </Link>
+            <Link className={tabClass("parent")} href={makeHref("parent")}>
+              Parents
+            </Link>
+            <Link className={tabClass("student")} href={makeHref("student")}>
+              Students
             </Link>
           </div>
-        </div>
 
-        {params.ok ? (
-          <div className="mt-3 rounded-xl border border-green-200 bg-green-50 px-4 py-2 text-sm text-green-800">
-            Done.
-          </div>
-        ) : null}
+          {/* Filters */}
+          <form className="mt-4 flex flex-wrap gap-2" action="/portal/admin/users" method="get">
+            <input type="hidden" name="role" value={role} />
 
-        {params.err ? (
-          <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800">
-            {decodeURIComponent(params.err)}
-          </div>
-        ) : null}
+            <input
+              name="q"
+              defaultValue={q}
+              className="portal-input w-full sm:w-72"
+              placeholder="Search name..."
+            />
 
-        {/* Tabs */}
-        <div className="mt-4 flex flex-wrap gap-2">
-          <Link className={tab("all")} href={makeHref("all")}>All</Link>
-          <Link className={tab("admin")} href={makeHref("admin")}>Admins</Link>
-          <Link className={tab("teacher")} href={makeHref("teacher")}>Teachers</Link>
-          <Link className={tab("parent")} href={makeHref("parent")}>Parents</Link>
-          <Link className={tab("student")} href={makeHref("student")}>Students</Link>
-        </div>
+            <select name="show" defaultValue={show} className="portal-select">
+              <option value="active">Active only</option>
+              <option value="all">Include inactive</option>
+            </select>
 
-        {/* Filters */}
-        <form className="mt-4 flex flex-wrap gap-2" action="/portal/admin/users" method="get">
-          <input type="hidden" name="role" value={role} />
-          <input
-            name="q"
-            defaultValue={q}
-            className="rounded-xl border px-3 py-2 text-sm w-64"
-            placeholder="Search name..."
-          />
-          <select name="show" defaultValue={show} className="rounded-xl border px-3 py-2 text-sm">
-            <option value="active">Active only</option>
-            <option value="all">Include inactive</option>
-          </select>
+            <button className="portal-btn" type="submit">
+              Filter
+            </button>
 
-          <button className="rounded-xl border bg-white px-3 py-2 text-sm hover:bg-[color:var(--ohs-surface)]">
-            Filter
-          </button>
-        </form>
+            {(q || show !== "active" || role !== "all") ? (
+              <Link className="portal-btn" href="/portal/admin/users">
+                Clear
+              </Link>
+            ) : null}
 
-        {/* Create */}
-        <div className="mt-6 grid gap-3 lg:grid-cols-2">
-          <div className="rounded-2xl border bg-[color:var(--ohs-surface)] p-4">
-            <h2 className="font-semibold">Create user</h2>
-            <form action={adminCreateUser} className="mt-3 grid gap-3">
-              <input className="rounded-lg border px-3 py-2" name="full_name" placeholder="Full name" required />
-              <input className="rounded-lg border px-3 py-2" name="email" placeholder="Email" type="email" required />
-              <input className="rounded-lg border px-3 py-2" name="password" placeholder="Temp password" type="password" required />
+            <div className="ml-auto flex items-center gap-2">
+              <Pill>{roleLabel(role)}</Pill>
+              <Pill>{show === "all" ? "Active + inactive" : "Active only"}</Pill>
+              <Pill>{(users ?? []).length} shown</Pill>
+            </div>
+          </form>
+        </section>
 
-              <select className="rounded-lg border px-3 py-2" name="role_key" defaultValue="student">
-                <option value="student">Student</option>
-                <option value="parent">Parent</option>
-                <option value="teacher">Teacher</option>
-                <option value="admin">Admin</option>
-              </select>
-
-              <button className="rounded-xl px-4 py-2 font-medium text-white" style={{ background: "var(--ohs-dark-green)" }}>
-                Create
-              </button>
-
-              <p className="text-xs text-slate-600">
-                Students/teachers/parents are now automatically created in their tables (fixes enrollments & assignments).
-              </p>
-            </form>
-          </div>
-
-          {/* List */}
-          <div className="rounded-2xl border bg-white p-4">
-            <h2 className="font-semibold">Users list</h2>
-            <p className="mt-1 text-xs text-slate-500">
-              Deactivate hides user from default list. Purge deletes only if user has no linked records.
+        {/* Content grid */}
+        <div className="grid gap-6 lg:grid-cols-2">
+          {/* Create */}
+          <section className="portal-surface p-6">
+            <h2 className="text-lg font-semibold text-slate-900">Create user</h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Create a new portal account. Use a temporary password and ask the user to change it.
             </p>
 
-            <div className="mt-3 divide-y">
+            <form action={adminCreateUser} className="mt-4 grid gap-3">
+              <label className="grid gap-1">
+                <span className="text-sm">Full name</span>
+                <input className="portal-input" name="full_name" placeholder="Full name" required />
+              </label>
+
+              <label className="grid gap-1">
+                <span className="text-sm">Email</span>
+                <input className="portal-input" name="email" placeholder="Email" type="email" required />
+              </label>
+
+              <label className="grid gap-1">
+                <span className="text-sm">Temporary password</span>
+                <input
+                  className="portal-input"
+                  name="password"
+                  placeholder="Temp password"
+                  type="password"
+                  required
+                />
+              </label>
+
+              <label className="grid gap-1">
+                <span className="text-sm">Role</span>
+                <select className="portal-select" name="role_key" defaultValue="student">
+                  <option value="student">Student</option>
+                  <option value="parent">Parent</option>
+                  <option value="teacher">Teacher</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </label>
+
+              <div className="pt-1">
+                <button className="portal-btn portal-btn-primary" type="submit">
+                  Create
+                </button>
+              </div>
+
+              <div className="rounded-xl border bg-white/70 p-3 text-xs text-slate-600">
+                Students/teachers/parents are automatically created in their tables to support
+                enrollments and assignments.
+              </div>
+            </form>
+          </section>
+
+          {/* List */}
+          <section className="portal-surface p-6">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">Users list</h2>
+                <p className="mt-1 text-xs text-slate-500">
+                  Deactivate hides a user from the default list. Purge deletes only if no linked records exist.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Pill>Max 300</Pill>
+              </div>
+            </div>
+
+            <div className="mt-4 divide-y rounded-xl border bg-white/70">
               {(users ?? []).map((u) => (
-                <div key={u.id} className="py-3 flex items-center justify-between gap-3">
-                  <div>
-                    <div className="font-medium">
+                <div key={u.id} className="px-3 py-3 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="font-medium text-slate-900 truncate">
                       {u.full_name}{" "}
-                      {!u.is_active ? <span className="text-xs text-red-600">(inactive)</span> : null}
+                      {!u.is_active ? <span className="text-xs text-red-700">• inactive</span> : null}
                     </div>
-                    <div className="text-xs text-slate-500">{u.role_key} • {u.id}</div>
+                    <div className="text-xs text-slate-500 truncate">
+                      {u.role_key} • {u.id}
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-2">
                     {u.is_active ? (
                       <form action={adminDeactivateUser}>
                         <input type="hidden" name="id" value={u.id} />
-                        <button className="text-sm underline text-slate-700 hover:text-slate-950" type="submit">
+                        <ConfirmSubmitButton
+                          className="portal-btn"
+                          confirmText={`Deactivate "${u.full_name}"?\n\nThey will not appear in the default list, but data remains.`}
+                          title="Deactivate user"
+                        >
                           Deactivate
-                        </button>
+                        </ConfirmSubmitButton>
                       </form>
                     ) : null}
 
                     <form action={adminPurgeUser}>
                       <input type="hidden" name="id" value={u.id} />
-                      <button className="text-sm underline text-red-600 hover:text-red-800" type="submit">
+                      <ConfirmSubmitButton
+                        className="portal-btn portal-btn-danger"
+                        confirmText={`Purge "${u.full_name}"?\n\nThis will DELETE the profile if it has no linked records.\nRecommended: Deactivate instead.`}
+                        title="Purge user"
+                      >
                         Purge
-                      </button>
+                      </ConfirmSubmitButton>
                     </form>
                   </div>
                 </div>
               ))}
 
               {(users ?? []).length === 0 ? (
-                <div className="py-6 text-sm text-slate-600">No users found.</div>
+                <div className="px-3 py-8 text-sm text-slate-600">No users found.</div>
               ) : null}
             </div>
-          </div>
+          </section>
         </div>
       </div>
-    </div>
+    </WatermarkedSection>
   );
 }
