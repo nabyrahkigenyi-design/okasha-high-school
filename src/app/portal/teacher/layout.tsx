@@ -27,6 +27,7 @@ export default async function TeacherLayout({ children }: { children: ReactNode 
           <NavLink href="/portal/teacher/attendance">Attendance</NavLink>
           <NavLink href="/portal/teacher/assignments">Assignments</NavLink>
           <NavLink href="/portal/teacher/grading">Grading</NavLink>
+          <NavLink href="/portal/teacher/announcements">Announcements</NavLink>
         </div>
       </div>
 
