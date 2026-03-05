@@ -34,7 +34,7 @@ export async function getSession(assignmentId: number, date: string) {
   const sb = supabaseAdmin();
   const { data, error } = await sb
     .from("attendance_sessions")
-    .select("id, assignment_id, session_date")
+    .select("id, assignment_id, session_date, finalized_at, finalized_by")
     .eq("assignment_id", assignmentId)
     .eq("session_date", date)
     .maybeSingle();

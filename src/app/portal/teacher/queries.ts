@@ -1,42 +1,90 @@
 import "server-only";
-import { supabaseServer } from "@/lib/supabase/server";
 import { requireRole } from "@/lib/rbac";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 
-export async function getTeacherAssignments() {
-  await requireRole(["teacher"]);
+export async function getActiveTerm() {
+  const sb = supabaseAdmin();
 
-  const sb = supabaseServer();
+  const { data, error } = await sb
+    .from("academic_terms")
+    .select("id, name, starts_on, ends_on, is_active")
+    .eq("is_active", true)
+    .order("id", { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
-  // 1️⃣ Get logged-in user
-  const {
-    data: { user },
-  } = await sb.auth.getUser();
+  if (error) throw new Error(error.message);
+  return data ?? null;
+}
 
-  if (!user) throw new Error("Not authenticated");
+export async function getTeacherAssignments(opts?: { termId?: number }) {
+  const me = await requireRole(["teacher"]);
+  const sb = supabaseAdmin();
 
-  // 2️⃣ Get teacher record linked to auth user
-  const { data: teacher, error: teacherError } = await sb
-    .from("teachers")
-    .select("id")
-    .eq("user_id", user.id)
-    .single();
+  const activeTerm = opts?.termId ? { id: opts.termId } : await getActiveTerm();
+  if (!activeTerm?.id) return [];
 
-  if (teacherError || !teacher)
-    throw new Error("Teacher profile not found");
-
-  // 3️⃣ Fetch assignments
   const { data, error } = await sb
     .from("teacher_assignments")
     .select(`
       id,
+      term_id,
+      class_id,
+      subject_id,
+      teacher_id,
       academic_terms:term_id ( id, name ),
-      class_groups:class_id ( id, name ),
-      subjects:subject_id ( id, name, code )
+      class_groups:class_id ( id, name, level, track_key ),
+      subjects:subject_id ( id, name, code, track )
     `)
-    .eq("teacher_id", teacher.id)
-    .order("id", { ascending: false });
+    .eq("term_id", activeTerm.id)
+    .eq("teacher_id", me.id)
+    .order("id", { ascending: true });
+
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
+export async function getTeacherAssignmentById(assignmentId: number) {
+  const me = await requireRole(["teacher"]);
+  const sb = supabaseAdmin();
+
+  const { data, error } = await sb
+    .from("teacher_assignments")
+    .select(`
+      id,
+      term_id,
+      class_id,
+      subject_id,
+      teacher_id,
+      academic_terms:term_id ( id, name ),
+      class_groups:class_id ( id, name, level, track_key ),
+      subjects:subject_id ( id, name, code, track )
+    `)
+    .eq("id", assignmentId)
+    .eq("teacher_id", me.id)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  return data ?? null;
+}
+
+export async function listRosterForAssignment(assignmentId: number) {
+  const assignment = await getTeacherAssignmentById(assignmentId);
+  if (!assignment) return [];
+
+  const sb = supabaseAdmin();
+
+  const { data, error } = await sb
+    .from("enrollments")
+    .select("student_id, students:student_id ( id, full_name )")
+    .eq("term_id", assignment.term_id)
+    .eq("class_id", assignment.class_id)
+    .order("student_id", { ascending: true });
 
   if (error) throw new Error(error.message);
 
-  return data ?? [];
+  return (data ?? []).map((row: any) => ({
+    id: row.students?.id ?? row.student_id,
+    full_name: row.students?.full_name ?? "Student",
+  }));
 }

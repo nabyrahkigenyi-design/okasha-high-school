@@ -1,74 +1,93 @@
 import Link from "next/link";
 import { requireRole } from "@/lib/rbac";
-import { supabaseServer } from "@/lib/supabase/server";
+import { getActiveTerm, getTeacherAssignments } from "../queries";
 
-type RelName = { name: string | null } | { name: string | null }[] | null;
+function StatCard({
+  label,
+  value,
+  href,
+}: {
+  label: string;
+  value: string | number;
+  href?: string;
+}) {
+  const content = (
+    <div className="portal-surface p-5">
+      <div className="text-xs font-semibold tracking-widest portal-muted">{label}</div>
+      <div className="mt-2 text-2xl font-bold text-[color:var(--ohs-charcoal)]">{value}</div>
+    </div>
+  );
 
-type AssignmentRow = {
-  id: number;
-  class_id: number;
-  subject_id: number;
-  term_id: number;
-  class_groups: RelName;
-  subjects: RelName;
-};
-
-function relName(v: RelName, fallback: string) {
-  if (!v) return fallback;
-  if (Array.isArray(v)) return v[0]?.name ?? fallback;
-  return v.name ?? fallback;
+  return href ? <Link href={href}>{content}</Link> : content;
 }
 
-export default async function TeacherDashboard() {
+export default async function TeacherDashboardPage() {
   const me = await requireRole(["teacher"]);
-  const supabase = await supabaseServer();
+  const activeTerm = await getActiveTerm();
+  const assignments = await getTeacherAssignments();
 
-  const { data } = await supabase
-    .from("teacher_assignments")
-    .select(`
-      id,
-      class_id,
-      subject_id,
-      term_id,
-      class_groups:class_groups(name),
-      subjects:subjects(name)
-    `)
-    .eq("teacher_id", me.id);
-
-  const assignments = (data ?? []) as AssignmentRow[];
+  const uniqueClasses = new Set(assignments.map((a: any) => a.class_id)).size;
 
   return (
-    <div className="space-y-6">
-      <div className="rounded-2xl border bg-white p-5">
-        <h1 className="text-xl font-semibold">Teacher Dashboard</h1>
-        <p className="mt-2 text-slate-600">Welcome, {me.full_name}.</p>
-      </div>
+    <div className="grid gap-6">
+      <section className="portal-surface p-5">
+        <div className="text-xs font-semibold tracking-widest portal-muted">DASHBOARD</div>
+        <h1 className="portal-title mt-2">Welcome, {me.full_name}</h1>
+        <p className="portal-subtitle">
+          {activeTerm ? `Active term: ${activeTerm.name}` : "No active term has been set by admin yet."}
+        </p>
+      </section>
 
-      <div className="rounded-2xl border bg-white p-5">
-        <h2 className="font-semibold">My Classes</h2>
+      <section className="grid gap-4 md:grid-cols-3">
+        <StatCard label="Assigned subjects" value={assignments.length} href="/portal/teacher/classes" />
+        <StatCard label="Classes" value={uniqueClasses} href="/portal/teacher/classes" />
+        <StatCard label="Active term" value={activeTerm?.name ?? "None"} />
+      </section>
 
-        {assignments.length > 0 ? (
-          <ul className="mt-3 space-y-3 text-sm">
-            {assignments.map((a) => (
-              <li key={a.id}>
-                <Link
-                  href={`/portal/teacher/attendance/${a.id}`}
-                  className="block border rounded-lg p-3 hover:bg-slate-50"
-                >
-                  <p className="font-medium">
-                    {relName(a.class_groups, "Class")}
-                  </p>
-                  <p className="text-slate-600">
-                    Subject: {relName(a.subjects, "Subject")}
-                  </p>
+      <section className="portal-surface p-5">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold">My teaching load</h2>
+            <p className="text-sm portal-muted">Your class and subject assignments for the active term.</p>
+          </div>
+          <Link className="portal-btn" href="/portal/teacher/classes">
+            Open My Classes
+          </Link>
+        </div>
+
+        <div className="mt-4 divide-y rounded-xl border bg-white/70">
+          {assignments.map((a: any) => (
+            <div key={a.id} className="px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="font-medium">
+                  {a.class_groups?.name} • {a.subjects?.name}
+                </div>
+                <div className="text-xs text-slate-500">
+                  {a.class_groups?.level} • {a.subjects?.track === "islamic" ? "Islamic Theology" : "Secular"}
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <Link className="portal-btn" href={`/portal/teacher/attendance?assignmentId=${a.id}`}>
+                  Attendance
                 </Link>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="mt-2 text-slate-600">No class assignments yet.</p>
-        )}
-      </div>
+                <Link className="portal-btn" href={`/portal/teacher/assignments?assignmentId=${a.id}`}>
+                  Assignments
+                </Link>
+                <Link className="portal-btn" href={`/portal/teacher/grading?assignmentId=${a.id}`}>
+                  Grading
+                </Link>
+              </div>
+            </div>
+          ))}
+
+          {assignments.length === 0 ? (
+            <div className="px-4 py-6 text-sm portal-muted">
+              No teaching assignments yet. Ask admin to assign you to a class and subject.
+            </div>
+          ) : null}
+        </div>
+      </section>
     </div>
   );
 }

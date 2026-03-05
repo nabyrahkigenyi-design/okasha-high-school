@@ -3,7 +3,7 @@
 import { requireRole } from "@/lib/rbac";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { revalidatePath } from "next/cache";
-import { getAssignmentOrNull } from "./queries";
+import { getAssignmentOrNull, getSession } from "./queries";
 
 const VALID = new Set(["present", "absent", "late", "excused"]);
 
@@ -19,7 +19,6 @@ export async function ensureSession(formData: FormData) {
 
   const sb = supabaseAdmin();
 
-  // upsert session for date
   const { data, error } = await sb
     .from("attendance_sessions")
     .upsert(
@@ -45,9 +44,18 @@ export async function saveMarks(formData: FormData) {
   const assignment = await getAssignmentOrNull(assignmentId);
   if (!assignment) throw new Error("Forbidden");
 
+  // hard lock if finalized
+  const session = await getSession(assignmentId, String(formData.get("date") ?? ""));
+  // If page doesn't send date, fetch by id:
   const sb = supabaseAdmin();
+  const { data: sessionRow, error: sessErr } = await sb
+    .from("attendance_sessions")
+    .select("id, finalized_at")
+    .eq("id", sessionId)
+    .maybeSingle();
+  if (sessErr) throw new Error(sessErr.message);
+  if (sessionRow?.finalized_at) throw new Error("Session finalized");
 
-  // form fields: status_<studentId>
   const rows: any[] = [];
   for (const [k, v] of formData.entries()) {
     if (!k.startsWith("status_")) continue;
@@ -68,6 +76,40 @@ export async function saveMarks(formData: FormData) {
   const { error } = await sb
     .from("attendance_marks")
     .upsert(rows, { onConflict: "session_id,student_id" });
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/portal/teacher/attendance?assignmentId=${assignmentId}`);
+}
+
+export async function finalizeSession(formData: FormData) {
+  const me = await requireRole(["teacher"]);
+  const assignmentId = Number(formData.get("assignmentId"));
+  const sessionId = Number(formData.get("sessionId"));
+
+  if (!assignmentId || !sessionId) throw new Error("Missing session");
+
+  const assignment = await getAssignmentOrNull(assignmentId);
+  if (!assignment) throw new Error("Forbidden");
+
+  const sb = supabaseAdmin();
+
+  // Ensure session belongs to that assignment
+  const { data: session, error: sessErr } = await sb
+    .from("attendance_sessions")
+    .select("id, finalized_at")
+    .eq("id", sessionId)
+    .eq("assignment_id", assignmentId)
+    .maybeSingle();
+
+  if (sessErr) throw new Error(sessErr.message);
+  if (!session) throw new Error("Session not found");
+  if (session.finalized_at) return;
+
+  const { error } = await sb
+    .from("attendance_sessions")
+    .update({ finalized_at: new Date().toISOString(), finalized_by: me.id })
+    .eq("id", sessionId);
 
   if (error) throw new Error(error.message);
 

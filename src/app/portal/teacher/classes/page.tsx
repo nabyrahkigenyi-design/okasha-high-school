@@ -1,33 +1,44 @@
 import Link from "next/link";
-import { listMyAssignments } from "./queries";
+import { getTeacherAssignments } from "../queries";
 
 export default async function TeacherClassesPage() {
-  const assignments = await listMyAssignments();
+  const assignments = await getTeacherAssignments();
 
   return (
-    <div className="rounded-2xl border bg-white p-5">
-      <h1 className="text-xl font-semibold">My classes</h1>
-      <p className="mt-1 text-sm text-slate-600">
-        Select a class/subject to mark attendance.
+    <div className="portal-surface p-5">
+      <h1 className="portal-title">My Classes</h1>
+      <p className="portal-subtitle">
+        Select a class and subject to manage attendance, assignments, or grading.
       </p>
 
-      <div className="mt-4 divide-y">
+      <div className="mt-4 divide-y rounded-xl border bg-white/70">
         {assignments.map((a: any) => (
-          <Link
-            key={a.id}
-            href={`/portal/teacher/attendance?assignmentId=${a.id}`}
-            className="block py-3 px-2 rounded-lg hover:bg-[color:var(--ohs-surface)]"
-          >
-            <div className="font-medium text-[color:var(--ohs-charcoal)]">
-              {a.class_groups.name} • {a.subjects.name}
+          <div key={a.id} className="px-4 py-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="font-medium text-[color:var(--ohs-charcoal)]">
+                {a.class_groups?.name} • {a.subjects?.name}
+              </div>
+              <div className="text-xs text-slate-500">
+                {a.class_groups?.level} • {a.subjects?.track === "islamic" ? "Islamic Theology" : "Secular"}
+              </div>
             </div>
-            <div className="text-xs text-slate-500">
-              {a.class_groups.level} • {a.subjects.track_key}
+
+            <div className="flex flex-wrap gap-2">
+              <Link className="portal-btn" href={`/portal/teacher/attendance?assignmentId=${a.id}`}>
+                Attendance
+              </Link>
+              <Link className="portal-btn" href={`/portal/teacher/assignments?assignmentId=${a.id}`}>
+                Assignments
+              </Link>
+              <Link className="portal-btn" href={`/portal/teacher/grading?assignmentId=${a.id}`}>
+                Grading
+              </Link>
             </div>
-          </Link>
+          </div>
         ))}
+
         {assignments.length === 0 ? (
-          <div className="py-6 text-sm text-slate-600">
+          <div className="px-4 py-6 text-sm portal-muted">
             No assignments yet. Ask admin to assign you to a class and subject.
           </div>
         ) : null}
