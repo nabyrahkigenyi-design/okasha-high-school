@@ -24,7 +24,8 @@ export async function GET(req: NextRequest) {
       ends_at,
       room,
       note,
-      subjects:subject_id ( name, code )
+      subjects:subject_id ( name, code ),
+      teachers:teacher_id ( full_name )
     `)
     .eq("term_id", termId)
     .eq("class_id", enrollment.class_id)
@@ -37,9 +38,11 @@ export async function GET(req: NextRequest) {
   const dayName = (n: number) =>
     n === 1 ? "Mon" : n === 2 ? "Tue" : n === 3 ? "Wed" : n === 4 ? "Thu" : n === 5 ? "Fri" : n === 6 ? "Sat" : "Sun";
 
-  const rows: string[][] = [["Day", "Period", "Start", "End", "Subject", "Code", "Room", "Note"]];
+  const rows: string[][] = [["Day", "Period", "Start", "End", "Subject", "Code", "Teacher", "Room", "Note"]];
+
   (data ?? []).forEach((x: any) => {
     const subj = (x.subjects as any) || {};
+    const teacher = (x.teachers as any) || {};
     rows.push([
       dayName(Number(x.day_of_week)),
       String(x.period_no ?? ""),
@@ -47,6 +50,7 @@ export async function GET(req: NextRequest) {
       String(x.ends_at ?? "").slice(0, 5),
       subj?.name ?? "",
       subj?.code ?? "",
+      teacher?.full_name ?? "",
       x.room ?? "",
       x.note ?? "",
     ]);

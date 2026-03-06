@@ -19,8 +19,7 @@ function todayDow(): number {
 
 function fmtTime(t: string | null) {
   if (!t) return "";
-  // "HH:MM:SS" -> "HH:MM"
-  return t.slice(0, 5);
+  return t.slice(0, 5); // "HH:MM:SS" -> "HH:MM"
 }
 
 export default async function StudentTimetablePage({
@@ -29,7 +28,7 @@ export default async function StudentTimetablePage({
   searchParams: Promise<{ termId?: string; day?: string }>;
 }) {
   const params = await searchParams;
-  await getStudentOrThrow(); // ensures student exists
+  await getStudentOrThrow();
 
   const sb = supabaseAdmin();
 
@@ -95,7 +94,8 @@ export default async function StudentTimetablePage({
       ends_at,
       room,
       note,
-      subjects:subject_id ( id, name, code )
+      subjects:subject_id ( id, name, code ),
+      teachers:teacher_id ( id, full_name )
     `)
     .eq("term_id", termId)
     .eq("class_id", enrollment.class_id)
@@ -155,17 +155,13 @@ export default async function StudentTimetablePage({
           </div>
         </form>
 
-        {/* Mobile-first day tabs (horizontal scroll) */}
+        {/* Mobile-first day tabs */}
         <div className="-mx-2 mt-4 flex gap-2 overflow-x-auto px-2 pb-1">
           {DAYS.map((d) => {
             const active = d.n === day;
             const href = `/portal/student/timetable?termId=${termId}&day=${d.n}`;
             return (
-              <Link
-                key={d.n}
-                href={href}
-                className={`portal-btn whitespace-nowrap ${active ? "portal-btn-primary" : ""}`}
-              >
+              <Link key={d.n} href={href} className={`portal-btn whitespace-nowrap ${active ? "portal-btn-primary" : ""}`}>
                 {d.label}
               </Link>
             );
@@ -183,6 +179,8 @@ export default async function StudentTimetablePage({
           <div className="mt-4 grid gap-3">
             {(lessons ?? []).map((x: any) => {
               const subj = one(x.subjects) as any;
+              const teacher = one(x.teachers) as any;
+
               return (
                 <div key={x.id} className="rounded-2xl border bg-white/70 p-4">
                   <div className="flex flex-wrap items-start justify-between gap-2">
@@ -191,16 +189,16 @@ export default async function StudentTimetablePage({
                         Period {x.period_no ?? "—"} • {subj?.name ?? "Subject"}
                       </div>
                       <div className="mt-1 text-xs text-slate-500">
-                        {fmtTime(x.starts_at)}–{fmtTime(x.ends_at)}{" "}
-                        {x.room ? `• Room: ${x.room}` : ""}
+                        {fmtTime(x.starts_at)}–{fmtTime(x.ends_at)}
+                        {teacher?.full_name ? ` • ${teacher.full_name}` : ""}
+                        {x.room ? ` • Room: ${x.room}` : ""}
                       </div>
                     </div>
+
                     {subj?.code ? <span className="portal-badge">{subj.code}</span> : null}
                   </div>
 
-                  {x.note ? (
-                    <div className="mt-2 text-sm text-slate-700 whitespace-pre-wrap">{x.note}</div>
-                  ) : null}
+                  {x.note ? <div className="mt-2 text-sm text-slate-700 whitespace-pre-wrap">{x.note}</div> : null}
                 </div>
               );
             })}
