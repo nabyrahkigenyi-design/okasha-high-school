@@ -25,19 +25,31 @@ function randomId() {
 
 export async function POST(req: Request) {
   try {
-    // Auth: must be logged in + admin
+    // Auth: must be logged in
     const sb = await supabaseSSR();
     const { data: userData } = await sb.auth.getUser();
     const user = userData.user;
     if (!user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
 
-    const { data: profile } = await sb
+    // Profile check
+    const { data: profile, error: profErr } = await sb
       .from("profiles")
       .select("role_key,is_active")
       .eq("id", user.id)
       .maybeSingle();
 
-    if (!profile?.is_active || profile.role_key !== "admin") {
+    if (profErr) {
+      return NextResponse.json({ ok: false, error: profErr.message }, { status: 500 });
+    }
+
+    if (!profile?.is_active) {
+      return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
+    }
+
+    // Allow admin + teacher
+    const role = profile.role_key;
+    const allowedRoles = new Set(["admin", "teacher"]);
+    if (!allowedRoles.has(role)) {
       return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
     }
 
@@ -47,13 +59,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
     }
 
-    // Allow images and PDFs
-    const allowed = new Set([
-      "image/jpeg",
-      "image/png",
-      "image/webp",
-      "application/pdf",
-    ]);
+    // Folder restrictions:
+    // - teachers can only upload to assignments
+    // - admins can upload to any folder
+    if (role === "teacher" && parsed.data.folder !== "assignments") {
+      return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
+    }
+
+    // Allow images and PDFs (you can add docx later)
+    const allowed = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
     if (!allowed.has(parsed.data.contentType)) {
       return NextResponse.json({ ok: false, error: "Unsupported file type" }, { status: 400 });
     }
@@ -70,9 +84,14 @@ export async function POST(req: Request) {
       Bucket: bucket,
       Key: key,
       ContentType: parsed.data.contentType,
+      // Optional: metadata to help auditing later
+      Metadata: {
+        uploaded_by: user.id,
+        role,
+      },
     });
 
-    const uploadUrl = await getSignedUrl(s3, cmd, { expiresIn: 60 }); // 60 seconds
+    const uploadUrl = await getSignedUrl(s3, cmd, { expiresIn: 60 });
     const publicUrl = `${process.env.R2_PUBLIC_BASE_URL!.replace(/\/$/, "")}/${key}`;
 
     return NextResponse.json({ ok: true, uploadUrl, publicUrl, key });

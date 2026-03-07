@@ -1,5 +1,4 @@
 import "server-only";
-import { requireRole } from "@/lib/rbac";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getTeacherAssignmentById, getTeacherAssignments } from "../queries";
 
@@ -13,20 +12,19 @@ export async function getSelectedAssignmentOrNull(assignmentId: number) {
 }
 
 export async function listMyAssignmentsForScope(assignmentId: number) {
-  const me = await requireRole(["teacher"]);
-  const sb = supabaseAdmin();
-
   const scope = await getTeacherAssignmentById(assignmentId);
   if (!scope) return [];
 
+  const sb = supabaseAdmin();
   const { data, error } = await sb
     .from("assignments")
-    .select("id, class_id, subject_id, term_id, title, description, due_at, attachment_url, created_by, created_at")
+    .select("id, title, description, due_at, attachment_url, created_at, created_by")
+    .eq("term_id", scope.term_id)
     .eq("class_id", scope.class_id)
     .eq("subject_id", scope.subject_id)
-    .eq("term_id", scope.term_id)
-    .eq("created_by", me.id)
-    .order("created_at", { ascending: false });
+    .eq("created_by", scope.teacher_id)
+    .order("created_at", { ascending: false })
+    .limit(200);
 
   if (error) throw new Error(error.message);
   return data ?? [];

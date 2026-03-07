@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { ToastGate } from "@/components/ToastGate";
-import { AttachmentUploader } from "./AttachmentUploader";
 import { createTeacherAssignment, deleteTeacherAssignmentItem } from "./actions";
 import { getSelectedAssignmentOrNull, listAssignmentOptions, listMyAssignmentsForScope } from "./queries";
+import { AttachmentField } from "./AttachmentField";
 
 type Rel<T> = T | T[] | null | undefined;
 function one<T>(v: Rel<T>): T | null {
@@ -82,7 +82,7 @@ export default async function TeacherAssignmentsPage({
             </div>
             <div className="mt-1 text-xs text-slate-500">
               {term?.name ?? "Term"} • {cg?.level ?? ""} •{" "}
-              {subj?.track === "islamic" ? "Islamic Theology" : "Secular"}
+              {(subj as any)?.track === "islamic" ? "Islamic Theology" : "Secular"}
             </div>
           </div>
         ) : (
@@ -124,22 +124,8 @@ export default async function TeacherAssignmentsPage({
 
               <label className="grid gap-1">
                 <span className="text-sm">Attachment (optional)</span>
-
-               {/* Hidden input submitted to server action */}
-                <input type="hidden" name="attachment_url" id="attachment_url" />
-
-                  <AttachmentUploader
-                   onUploaded={(url) => {
-                     const input = document.getElementById("attachment_url") as HTMLInputElement | null;
-                     if (input) input.value = url;
-
-                     const preview = document.getElementById("attachment_preview");
-                     if (preview) preview.textContent = url;
-                   }}
-                   />
-
-                <div id="attachment_preview" className="text-xs text-slate-600 break-all" />
-             </label>
+                <AttachmentField />
+              </label>
 
               <button className="portal-btn portal-btn-primary w-fit" type="submit">
                 Create assignment
@@ -156,19 +142,28 @@ export default async function TeacherAssignmentsPage({
             <div className="mt-4 divide-y rounded-xl border bg-white/70">
               {items.map((item: any) => (
                 <div key={item.id} className="px-4 py-4 flex flex-wrap items-start justify-between gap-3">
-                  <div>
+                  <div className="min-w-0">
                     <div className="font-medium">{item.title}</div>
                     <div className="text-xs text-slate-500">
                       Due: {item.due_at ? new Date(item.due_at).toLocaleString() : "No due date"}
                     </div>
+
                     {item.description ? (
                       <p className="mt-2 text-sm text-slate-700 whitespace-pre-wrap">{item.description}</p>
                     ) : null}
+
                     {item.attachment_url ? (
-                      <a className="mt-2 inline-block text-sm underline" href={item.attachment_url} target="_blank" rel="noreferrer">
+                      <a
+                        className="mt-2 inline-block text-sm underline"
+                        href={item.attachment_url}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
                         Open attachment
                       </a>
-                    ) : null}
+                    ) : (
+                      <div className="mt-2 text-xs text-slate-500">No file</div>
+                    )}
                   </div>
 
                   <form action={deleteTeacherAssignmentItem}>
@@ -182,7 +177,9 @@ export default async function TeacherAssignmentsPage({
               ))}
 
               {items.length === 0 ? (
-                <div className="px-4 py-6 text-sm portal-muted">No assignments created yet for this class/subject.</div>
+                <div className="px-4 py-6 text-sm portal-muted">
+                  No assignments created yet for this class/subject.
+                </div>
               ) : null}
             </div>
           </section>
