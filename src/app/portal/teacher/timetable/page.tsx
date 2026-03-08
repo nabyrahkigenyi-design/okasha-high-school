@@ -1,6 +1,6 @@
 import Link from "next/link";
+import { requireRole } from "@/lib/rbac";
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { getActiveTermOrNull, getMyEnrollmentOrNull, getStudentOrThrow, one } from "@/app/portal/student/queries";
 
 const DAYS = [
   { key: "mon", label: "Mon" },
@@ -15,7 +15,7 @@ const DAYS = [
 type DayKey = (typeof DAYS)[number]["key"];
 
 function todayDayKey(): DayKey {
-  const d = new Date().getDay(); // 0=Sun..6=Sat
+  const d = new Date().getDay();
   switch (d) {
     case 1:
       return "mon";
@@ -39,15 +39,21 @@ function fmtTime(t: string | null) {
   return String(t).slice(0, 5);
 }
 
-export default async function StudentTimetablePage({
+type Rel<T> = T | T[] | null | undefined;
+function one<T>(v: Rel<T>): T | null {
+  if (!v) return null;
+  return Array.isArray(v) ? (v[0] ?? null) : v;
+}
+
+export default async function TeacherTimetablePage({
   searchParams,
 }: {
   searchParams: Promise<{ termId?: string; day?: string }>;
 }) {
-  const params = await searchParams;
-  await getStudentOrThrow();
-
+  const me = await requireRole(["teacher"]);
   const sb = supabaseAdmin();
+
+  const params = await searchParams;
 
   const { data: terms, error: termErr } = await sb
     .from("academic_terms")
@@ -57,49 +63,18 @@ export default async function StudentTimetablePage({
 
   if (termErr) throw new Error(termErr.message);
 
-  const activeTerm = await getActiveTermOrNull();
-  const termId = params.termId ? Number(params.termId) : activeTerm?.id ?? terms?.[0]?.id ?? null;
+  const activeTerm = terms?.find((t: any) => t.is_active) ?? terms?.[0] ?? null;
+  const termId = params.termId ? Number(params.termId) : activeTerm?.id ?? null;
+  const day = (params.day as DayKey | undefined) ?? todayDayKey();
 
   if (!termId) {
     return (
       <div className="portal-surface p-5">
-        <h1 className="portal-title">Timetable</h1>
+        <h1 className="portal-title">My Timetable</h1>
         <p className="portal-subtitle">No academic terms found yet.</p>
       </div>
     );
   }
-
-  const enrollment = await getMyEnrollmentOrNull(termId);
-  const cg: any = one(enrollment?.class_groups);
-
-  if (!enrollment?.class_id) {
-    return (
-      <div className="grid gap-6">
-        <section className="portal-surface p-5">
-          <h1 className="portal-title">Timetable</h1>
-          <p className="portal-subtitle">You are not enrolled for this term.</p>
-
-          <form method="get" className="mt-4 grid gap-2 max-w-md">
-            <label className="grid gap-1">
-              <span className="text-sm">Term</span>
-              <select className="portal-select" name="termId" defaultValue={String(termId)}>
-                {(terms ?? []).map((t: any) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name} {t.is_active ? "(active)" : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button className="portal-btn portal-btn-primary w-fit" type="submit">
-              Apply
-            </button>
-          </form>
-        </section>
-      </div>
-    );
-  }
-
-  const day = (params.day as DayKey | undefined) ?? todayDayKey();
 
   const { data: lessons, error: ttErr } = await sb
     .from("timetables")
@@ -111,11 +86,12 @@ export default async function StudentTimetablePage({
       end_time,
       room,
       note,
+      class_groups:class_id ( id, name, level, track_key ),
       subjects:subject_id ( id, name, code ),
       teachers:teacher_id ( id, full_name )
     `)
     .eq("term_id", termId)
-    .eq("class_id", enrollment.class_id)
+    .eq("teacher_id", me.id)
     .eq("day_of_week", day)
     .order("period_no", { ascending: true });
 
@@ -128,17 +104,10 @@ export default async function StudentTimetablePage({
       <section className="portal-surface p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="portal-title">Timetable</h1>
+            <h1 className="portal-title">My Timetable</h1>
             <p className="portal-subtitle">
-              Term: <span className="font-medium">{termName}</span> • Class:{" "}
-              <span className="font-medium">{cg?.name ?? enrollment.class_id}</span>
+              Term: <span className="font-medium">{termName}</span>
             </p>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <a className="portal-btn" href={`/portal/student/timetable/export?termId=${termId}`}>
-              Download CSV
-            </a>
           </div>
         </div>
 
@@ -175,7 +144,7 @@ export default async function StudentTimetablePage({
         <div className="-mx-2 mt-4 flex gap-2 overflow-x-auto px-2 pb-1">
           {DAYS.map((d) => {
             const active = d.key === day;
-            const href = `/portal/student/timetable?termId=${termId}&day=${d.key}`;
+            const href = `/portal/teacher/timetable?termId=${termId}&day=${d.key}`;
             return (
               <Link key={d.key} href={href} className={`portal-btn whitespace-nowrap ${active ? "portal-btn-primary" : ""}`}>
                 {d.label}
@@ -187,15 +156,15 @@ export default async function StudentTimetablePage({
 
       <section className="portal-surface p-5">
         <h2 className="text-lg font-semibold">Lessons</h2>
-        <p className="mt-1 text-sm portal-muted">Your schedule for the selected day.</p>
+        <p className="mt-1 text-sm portal-muted">Your teaching schedule for the selected day.</p>
 
         {(lessons ?? []).length === 0 ? (
-          <div className="mt-4 text-sm portal-muted">No lessons scheduled for this day.</div>
+          <div className="mt-4 text-sm portal-muted">No lessons assigned for this day.</div>
         ) : (
           <div className="mt-4 grid gap-3">
             {(lessons ?? []).map((x: any) => {
               const subj = one(x.subjects) as any;
-              const teacher = one(x.teachers) as any;
+              const cg = one(x.class_groups) as any;
 
               return (
                 <div key={x.id} className="rounded-2xl border bg-white/70 p-4">
@@ -206,7 +175,7 @@ export default async function StudentTimetablePage({
                       </div>
                       <div className="mt-1 text-xs text-slate-500">
                         {fmtTime(x.start_time)}–{fmtTime(x.end_time)}
-                        {teacher?.full_name ? ` • ${teacher.full_name}` : ""}
+                        {cg?.name ? ` • ${cg.name}` : ""}
                         {x.room ? ` • Room: ${x.room}` : ""}
                       </div>
                     </div>

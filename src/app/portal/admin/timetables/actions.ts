@@ -8,7 +8,9 @@ import { redirect } from "next/navigation";
 
 const sb = () => supabaseAdmin();
 
-function backUrl(p: { termId?: number; classId?: number; day?: number }) {
+const DayEnum = z.enum(["mon", "tue", "wed", "thu", "fri", "sat", "sun"]);
+
+function backUrl(p: { termId?: number; classId?: number; day?: string }) {
   const qs = new URLSearchParams();
   if (p.termId) qs.set("termId", String(p.termId));
   if (p.classId) qs.set("classId", String(p.classId));
@@ -24,7 +26,7 @@ export async function upsertSlot(fd: FormData) {
     id: z.coerce.number().int().optional(),
     term_id: z.coerce.number().int().positive(),
     class_id: z.coerce.number().int().positive(),
-    day_of_week: z.enum(["mon", "tue", "wed", "thu", "fri", "sat", "sun"]),
+    day_of_week: DayEnum,
     period_no: z.coerce.number().int().min(1).max(30),
     start_time: z.string().min(1),
     end_time: z.string().min(1),
@@ -50,11 +52,33 @@ export async function upsertSlot(fd: FormData) {
 
   const termId = Number(fd.get("term_id") ?? 0);
   const classId = Number(fd.get("class_id") ?? 0);
-  const day = Number(fd.get("day_of_week") ?? 0);
+  const day = String(fd.get("day_of_week") ?? "");
   const back = backUrl({ termId, classId, day });
 
   if (!parsed.success) {
-    redirect(`${back}&err=${encodeURIComponent("Invalid fields. Check period/times/subject.")}`);
+    redirect(`${back}&err=${encodeURIComponent("Invalid fields. Check period, times, subject, and day.")}`);
+  }
+
+  // Server-side protection:
+  // if a teacher is selected, ensure they are actually assigned to this term+class+subject
+  if (parsed.data.teacher_id) {
+    const { data: ta, error: taErr } = await sb()
+      .from("teacher_assignments")
+      .select("id")
+      .eq("term_id", parsed.data.term_id)
+      .eq("class_id", parsed.data.class_id)
+      .eq("subject_id", parsed.data.subject_id)
+      .eq("teacher_id", parsed.data.teacher_id)
+      .maybeSingle();
+
+    if (taErr) redirect(`${back}&err=${encodeURIComponent(taErr.message)}`);
+    if (!ta) {
+      redirect(
+        `${back}&err=${encodeURIComponent(
+          "Selected teacher is not assigned to this class and subject for the chosen term."
+        )}`
+      );
+    }
   }
 
   const payload = {
@@ -79,6 +103,8 @@ export async function upsertSlot(fd: FormData) {
   }
 
   revalidatePath("/portal/admin/timetables");
+  revalidatePath("/portal/student/timetable");
+  revalidatePath("/portal/teacher/timetable");
   redirect(`${back}&ok=1`);
 }
 
@@ -88,7 +114,7 @@ export async function deleteSlot(fd: FormData) {
   const id = Number(fd.get("id") ?? 0);
   const termId = Number(fd.get("termId") ?? 0);
   const classId = Number(fd.get("classId") ?? 0);
-  const day = Number(fd.get("day") ?? 0);
+  const day = String(fd.get("day") ?? "");
 
   const back = backUrl({ termId, classId, day });
   if (!id) redirect(`${back}&err=${encodeURIComponent("Missing slot id.")}`);
@@ -97,6 +123,8 @@ export async function deleteSlot(fd: FormData) {
   if (error) redirect(`${back}&err=${encodeURIComponent(error.message)}`);
 
   revalidatePath("/portal/admin/timetables");
+  revalidatePath("/portal/student/timetable");
+  revalidatePath("/portal/teacher/timetable");
   redirect(`${back}&ok=1`);
 }
 
@@ -111,8 +139,8 @@ export async function copyDay(fd: FormData) {
   const Schema = z.object({
     term_id: z.coerce.number().int().positive(),
     class_id: z.coerce.number().int().positive(),
-    from_day: z.enum(["mon","tue","wed","thu","fri","sat","sun"]),
-    to_day: z.enum(["mon","tue","wed","thu","fri","sat","sun"]),
+    from_day: DayEnum,
+    to_day: DayEnum,
   });
 
   const parsed = Schema.safeParse({
@@ -124,26 +152,28 @@ export async function copyDay(fd: FormData) {
 
   const termId = Number(fd.get("term_id") ?? 0);
   const classId = Number(fd.get("class_id") ?? 0);
-  const toDay = Number(fd.get("to_day") ?? 0);
-  const back = backUrl({ termId, classId, day: toDay || 1 });
+  const toDay = String(fd.get("to_day") ?? "");
+  const back = backUrl({ termId, classId, day: toDay || "mon" });
 
   if (!parsed.success) redirect(`${back}&err=${encodeURIComponent("Invalid copy day parameters.")}`);
-  if (parsed.data.from_day === parsed.data.to_day) redirect(`${back}&err=${encodeURIComponent("Choose two different days.")}`);
+  if (parsed.data.from_day === parsed.data.to_day) {
+    redirect(`${back}&err=${encodeURIComponent("Choose two different days.")}`);
+  }
 
   const sbx = sb();
 
   const { data: fromSlots, error: fromErr } = await sbx
     .from("timetables")
-    .select("period_no, starts_at, ends_at, subject_id, teacher_id, room, note")
+    .select("period_no, start_time, end_time, subject_id, teacher_id, room, note")
     .eq("term_id", parsed.data.term_id)
     .eq("class_id", parsed.data.class_id)
     .eq("day_of_week", parsed.data.from_day);
 
   if (fromErr) redirect(`${back}&err=${encodeURIComponent(fromErr.message)}`);
+  if (!fromSlots || fromSlots.length === 0) {
+    redirect(`${back}&err=${encodeURIComponent("No slots found to copy.")}`);
+  }
 
-  if (!fromSlots || fromSlots.length === 0) redirect(`${back}&err=${encodeURIComponent("No slots found to copy.")}`);
-
-  // Insert one-by-one to skip conflicts cleanly
   let copied = 0;
   for (const s of fromSlots) {
     const { error } = await sbx.from("timetables").insert({
@@ -151,8 +181,8 @@ export async function copyDay(fd: FormData) {
       class_id: parsed.data.class_id,
       day_of_week: parsed.data.to_day,
       period_no: s.period_no,
-      starts_at: s.starts_at,
-      ends_at: s.ends_at,
+      start_time: s.start_time,
+      end_time: s.end_time,
       subject_id: s.subject_id,
       teacher_id: s.teacher_id ?? null,
       room: s.room ?? null,
@@ -160,10 +190,11 @@ export async function copyDay(fd: FormData) {
     });
 
     if (!error) copied += 1;
-    // If error due to unique constraint, just skip silently.
   }
 
   revalidatePath("/portal/admin/timetables");
+  revalidatePath("/portal/student/timetable");
+  revalidatePath("/portal/teacher/timetable");
   redirect(`${back}&ok=1`);
 }
 
@@ -188,22 +219,27 @@ export async function copyFromTerm(fd: FormData) {
 
   const targetTermId = Number(fd.get("target_term_id") ?? 0);
   const classId = Number(fd.get("class_id") ?? 0);
-  const back = backUrl({ termId: targetTermId, classId, day: 1 });
+  const back = backUrl({ termId: targetTermId, classId, day: "mon" });
 
-  if (!parsed.success) redirect(`${back}&err=${encodeURIComponent("Invalid copy-from-term parameters.")}`);
-  if (parsed.data.source_term_id === parsed.data.target_term_id) redirect(`${back}&err=${encodeURIComponent("Choose two different terms.")}`);
+  if (!parsed.success) {
+    redirect(`${back}&err=${encodeURIComponent("Invalid copy-from-term parameters.")}`);
+  }
+  if (parsed.data.source_term_id === parsed.data.target_term_id) {
+    redirect(`${back}&err=${encodeURIComponent("Choose two different terms.")}`);
+  }
 
   const sbx = sb();
 
   const { data: sourceRows, error: srcErr } = await sbx
     .from("timetables")
-    .select("day_of_week, period_no, starts_at, ends_at, subject_id, teacher_id, room, note")
+    .select("day_of_week, period_no, start_time, end_time, subject_id, teacher_id, room, note")
     .eq("term_id", parsed.data.source_term_id)
     .eq("class_id", parsed.data.class_id);
 
   if (srcErr) redirect(`${back}&err=${encodeURIComponent(srcErr.message)}`);
-
-  if (!sourceRows || sourceRows.length === 0) redirect(`${back}&err=${encodeURIComponent("No timetable rows found in source term.")}`);
+  if (!sourceRows || sourceRows.length === 0) {
+    redirect(`${back}&err=${encodeURIComponent("No timetable rows found in source term.")}`);
+  }
 
   let copied = 0;
   for (const r of sourceRows) {
@@ -212,8 +248,8 @@ export async function copyFromTerm(fd: FormData) {
       class_id: parsed.data.class_id,
       day_of_week: r.day_of_week,
       period_no: r.period_no,
-      starts_at: r.starts_at,
-      ends_at: r.ends_at,
+      start_time: r.start_time,
+      end_time: r.end_time,
       subject_id: r.subject_id,
       teacher_id: r.teacher_id ?? null,
       room: r.room ?? null,
@@ -224,5 +260,7 @@ export async function copyFromTerm(fd: FormData) {
   }
 
   revalidatePath("/portal/admin/timetables");
+  revalidatePath("/portal/student/timetable");
+  revalidatePath("/portal/teacher/timetable");
   redirect(`${back}&ok=1`);
 }

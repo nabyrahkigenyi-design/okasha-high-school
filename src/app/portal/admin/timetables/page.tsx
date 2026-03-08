@@ -3,7 +3,15 @@ import { requireRole } from "@/lib/rbac";
 import { ToastGate } from "@/components/ToastGate";
 import { ConfirmSubmitButton } from "@/components/ConfirmSubmitButton";
 import { upsertSlot, deleteSlot, copyDay, copyFromTerm } from "./actions";
-import { getSlotOrNull, listClasses, listSubjects, listTeachers, listTerms, listTimetableSlots } from "./queries";
+import {
+  getSlotOrNull,
+  listClasses,
+  listSubjects,
+  listTeacherAssignmentsForClass,
+  listTerms,
+  listTimetableSlots,
+} from "./queries";
+import { TimetableSlotForm } from "./TimetableSlotForm";
 
 type Rel<T> = T | T[] | null | undefined;
 function one<T>(v: Rel<T>): T | null {
@@ -46,24 +54,23 @@ export default async function AdminTimetablesPage({
   const terms = await listTerms();
   const classes = await listClasses();
   const subjects = await listSubjects();
-  const teachers = await listTeachers();
 
   const termId = params.termId
     ? Number(params.termId)
     : (terms.find((t: any) => t.is_active)?.id ?? terms[0]?.id ?? 0);
 
   const classId = params.classId ? Number(params.classId) : (classes[0]?.id ?? 0);
-
-  const day = (params.day as DayKey | undefined) ?? "mon";
-  const dayLabel = DAYS.find((d) => d.key === day)?.label ?? day;
+  const day = ((params.day as DayKey | undefined) ?? "mon") as DayKey;
 
   const selectedId = params.id ? Number(params.id) : 0;
   const editing = selectedId ? await getSlotOrNull(selectedId) : null;
 
   const slots = termId && classId && day ? await listTimetableSlots({ termId, classId, day }) : [];
+  const teacherAssignments = termId && classId ? await listTeacherAssignmentsForClass(termId, classId) : [];
 
   const termName = terms.find((t: any) => t.id === termId)?.name ?? `Term ${termId}`;
   const cls = classes.find((c: any) => c.id === classId);
+  const dayLabel = DAYS.find((d) => d.key === day)?.label ?? day;
 
   const baseHref = (extra?: Record<string, string | number>) => {
     const qs = new URLSearchParams();
@@ -135,11 +142,10 @@ export default async function AdminTimetablesPage({
             {termName} • {cls?.name ?? classId} • {dayLabel}
           </div>
           <div className="mt-1 text-xs text-slate-500">
-            Day is stored as text (mon..sun). Copy tools skip conflicts.
+            Only teachers assigned to this class and subject can be selected.
           </div>
         </div>
 
-        {/* Copy tools */}
         <div className="mt-4 grid gap-3 lg:grid-cols-2">
           <div className="rounded-2xl border bg-white/70 p-4">
             <div className="text-sm font-semibold">Copy Day</div>
@@ -215,7 +221,6 @@ export default async function AdminTimetablesPage({
       </section>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        {/* Editor */}
         <section className="portal-surface p-5">
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -227,80 +232,17 @@ export default async function AdminTimetablesPage({
             </Link>
           </div>
 
-          <form action={upsertSlot} className="mt-4 grid gap-3">
-            <input type="hidden" name="id" value={editing?.id ?? ""} />
-            <input type="hidden" name="term_id" value={termId} />
-            <input type="hidden" name="class_id" value={classId} />
-            <input type="hidden" name="day_of_week" value={day} />
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="grid gap-1">
-                <span className="text-sm">Period No</span>
-                <input
-                  className="portal-input"
-                  type="number"
-                  name="period_no"
-                  min={1}
-                  max={30}
-                  required
-                  defaultValue={editing?.period_no ?? ""}
-                />
-              </label>
-
-              <label className="grid gap-1">
-                <span className="text-sm">Subject</span>
-                <select className="portal-select" name="subject_id" defaultValue={editing?.subject_id ?? subjects[0]?.id ?? ""}>
-                  {subjects.map((s: any) => (
-                    <option key={s.id} value={s.id}>
-                      {s.code ? `${s.code} — ` : ""}
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="grid gap-1">
-                <span className="text-sm">Starts</span>
-                <input className="portal-input" type="time" name="start_time" required defaultValue={editing?.start_time ?? ""} />
-              </label>
-
-              <label className="grid gap-1">
-                <span className="text-sm">Ends</span>
-                <input className="portal-input" type="time" name="end_time" required defaultValue={editing?.end_time ?? ""} />
-              </label>
-            </div>
-
-            <label className="grid gap-1">
-              <span className="text-sm">Teacher (optional)</span>
-              <select className="portal-select" name="teacher_id" defaultValue={editing?.teacher_id ?? ""}>
-                <option value="">—</option>
-                {teachers.map((t: any) => (
-                  <option key={t.id} value={t.id}>
-                    {t.full_name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="grid gap-1">
-              <span className="text-sm">Room (optional)</span>
-              <input className="portal-input" name="room" defaultValue={editing?.room ?? ""} placeholder="Room A1" />
-            </label>
-
-            <label className="grid gap-1">
-              <span className="text-sm">Note (optional)</span>
-              <textarea className="portal-input min-h-[110px]" name="note" defaultValue={editing?.note ?? ""} />
-            </label>
-
-            <button className="portal-btn portal-btn-primary w-fit" type="submit">
-              {editing ? "Save changes" : "Create slot"}
-            </button>
-          </form>
+          <TimetableSlotForm
+            action={upsertSlot}
+            termId={termId}
+            classId={classId}
+            day={day}
+            subjects={subjects}
+            teacherAssignments={teacherAssignments}
+            editing={editing}
+          />
         </section>
 
-        {/* List */}
         <section className="portal-surface p-5">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-lg font-semibold">Slots</h2>
@@ -340,7 +282,10 @@ export default async function AdminTimetablesPage({
                           <input type="hidden" name="termId" value={termId} />
                           <input type="hidden" name="classId" value={classId} />
                           <input type="hidden" name="day" value={day} />
-                          <ConfirmSubmitButton className="portal-btn portal-btn-danger" confirmText={`Delete period ${x.period_no ?? "?"} for ${dayLabel}?`}>
+                          <ConfirmSubmitButton
+                            className="portal-btn portal-btn-danger"
+                            confirmText={`Delete period ${x.period_no ?? "?"} for ${dayLabel}?`}
+                          >
                             Delete
                           </ConfirmSubmitButton>
                         </form>

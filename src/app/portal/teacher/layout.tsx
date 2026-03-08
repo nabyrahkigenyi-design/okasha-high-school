@@ -24,6 +24,7 @@ export default async function TeacherLayout({ children }: { children: ReactNode 
         <div className="flex flex-wrap gap-2">
           <NavLink href="/portal/teacher/dashboard">Dashboard</NavLink>
           <NavLink href="/portal/teacher/classes">My Classes</NavLink>
+          <NavLink href="/portal/teacher/timetable">Timetable</NavLink>
           <NavLink href="/portal/teacher/attendance">Attendance</NavLink>
           <NavLink href="/portal/teacher/assignments">Assignments</NavLink>
           <NavLink href="/portal/teacher/grading">Grading</NavLink>

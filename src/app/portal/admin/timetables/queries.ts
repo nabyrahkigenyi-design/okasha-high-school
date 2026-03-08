@@ -57,6 +57,32 @@ export async function listTeachers() {
   return data ?? [];
 }
 
+export async function listTeacherAssignmentsForClass(termId: number, classId: number) {
+  await requireRole(["admin"]);
+  const sb = supabaseAdmin();
+
+  if (!termId || !classId) return [];
+
+  const { data, error } = await sb
+    .from("teacher_assignments")
+    .select(`
+      id,
+      term_id,
+      class_id,
+      subject_id,
+      teacher_id,
+      subjects:subject_id ( id, name, code ),
+      teachers:teacher_id ( id, full_name )
+    `)
+    .eq("term_id", termId)
+    .eq("class_id", classId)
+    .order("subject_id", { ascending: true })
+    .limit(1000);
+
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
 export async function listTimetableSlots(params: { termId: number; classId: number; day: string }) {
   await requireRole(["admin"]);
   const sb = supabaseAdmin();
