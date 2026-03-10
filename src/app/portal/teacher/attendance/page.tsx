@@ -1,8 +1,10 @@
 import Link from "next/link";
-import { ensureSession, saveMarks, finalizeSession } from "./actions";import { getMarks, getSession } from "./queries";
+import { ensureSession, saveMarks, finalizeSession } from "./actions";
+import { getMarks, getSession } from "./queries";
 import { getTeacherAssignmentById, getTeacherAssignments, listRosterForAssignment } from "../queries";
 
 type Rel<T> = T | T[] | null | undefined;
+
 function one<T>(v: Rel<T>): T | null {
   if (!v) return null;
   return Array.isArray(v) ? (v[0] ?? null) : v;
@@ -10,6 +12,10 @@ function one<T>(v: Rel<T>): T | null {
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function StatusPill({ text }: { text: string }) {
+  return <span className="portal-badge">{text}</span>;
 }
 
 export default async function TeacherAttendancePage({
@@ -33,16 +39,16 @@ export default async function TeacherAttendancePage({
   const session = selected ? await getSession(selected.id, date) : null;
   const marks = session ? await getMarks(session.id) : new Map();
 
-  // Lock once anything exists for this session
   const locked = !!session?.finalized_at;
+
   return (
     <div className="grid gap-6">
-      <section className="portal-surface p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
+      <section className="portal-surface p-4 sm:p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
             <h1 className="portal-title">Attendance</h1>
             <p className="portal-subtitle">
-              Select class/subject, pick a date, create/open a session, then mark students.
+              Choose a class and date, open the session, then mark each student clearly.
             </p>
           </div>
 
@@ -89,24 +95,33 @@ export default async function TeacherAttendancePage({
           </label>
 
           <div className="flex items-end">
-            <button className="portal-btn portal-btn-primary" type="submit">
+            <button className="portal-btn portal-btn-primary w-full md:w-auto" type="submit">
               Open
             </button>
           </div>
         </form>
 
         {selected ? (
-          <div className="mt-4 rounded-xl border bg-white/70 p-4">
-            <div className="font-medium">
-              {cg?.name ?? "Class"} • {subj?.name ?? "Subject"}
-            </div>
-            <div className="mt-1 text-xs text-slate-500">
-              {term?.name ?? "Term"} • {cg?.level ?? ""} •{" "}
-              {subj?.track === "islamic" ? "Islamic Theology" : "Secular"}
+          <div className="mt-4 rounded-2xl border border-slate-200 bg-white/75 p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <div className="text-base font-semibold text-slate-900">
+                  {cg?.name ?? "Class"} • {subj?.name ?? "Subject"}
+                </div>
+                <div className="mt-1 text-sm text-slate-600">
+                  {term?.name ?? "Term"} • {cg?.level ?? ""} •{" "}
+                  {subj?.track === "islamic" ? "Islamic Theology" : "Secular"}
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <StatusPill text={date} />
+                {locked ? <StatusPill text="Locked" /> : <StatusPill text="Editable" />}
+              </div>
             </div>
           </div>
         ) : (
-          <div className="mt-4 text-sm portal-muted">
+          <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-white/60 p-4 text-sm text-slate-600">
             {allAssignments.length === 0
               ? "You do not have any active teaching assignments yet."
               : "Select a class and subject to continue."}
@@ -116,91 +131,110 @@ export default async function TeacherAttendancePage({
 
       {selected ? (
         <>
-          <section className="portal-surface p-5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
+          <section className="portal-surface p-4 sm:p-5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div>
-                <h2 className="text-lg font-semibold">Session</h2>
-                <p className="text-sm portal-muted">
+                <h2 className="text-lg font-semibold text-slate-900">Session</h2>
+                <p className="mt-1 text-sm text-slate-600">
                   {session ? `Session exists for ${date}.` : "No session yet for this date."}
                 </p>
               </div>
 
-              <form action={ensureSession} className="flex flex-wrap items-center gap-2">
-                <input type="hidden" name="assignmentId" value={selected.id} />
-                <input type="hidden" name="sessionDate" value={date} />
-                <button className="portal-btn portal-btn-primary" type="submit">
-                  {session ? "Open session" : "Create session"}
-                </button>
-              </form>
-              {session && !locked ? (
-              <form action={finalizeSession} className="mt-2">
-                <input type="hidden" name="assignmentId" value={selected.id} />
-                <input type="hidden" name="sessionId" value={session.id} />
-                <button className="portal-btn portal-btn-danger" type="submit">
-                   Finalize attendance
-                </button>
-                <div className="mt-1 text-xs portal-muted">
-                 Finalizing locks this attendance permanently.
-                </div>
-              </form>
-) : null}
+              <div className="flex flex-wrap gap-2">
+                <form action={ensureSession}>
+                  <input type="hidden" name="assignmentId" value={selected.id} />
+                  <input type="hidden" name="sessionDate" value={date} />
+                  <button className="portal-btn portal-btn-primary" type="submit">
+                    {session ? "Open session" : "Create session"}
+                  </button>
+                </form>
+
+                {session && !locked ? (
+                  <form action={finalizeSession}>
+                    <input type="hidden" name="assignmentId" value={selected.id} />
+                    <input type="hidden" name="sessionId" value={session.id} />
+                    <button className="portal-btn portal-btn-danger" type="submit">
+                      Finalize attendance
+                    </button>
+                  </form>
+                ) : null}
+              </div>
             </div>
 
             {locked ? (
-              <div className="mt-3 rounded-xl border bg-white/70 p-3 text-sm text-slate-700">
-                Attendance has been saved and is now <b>locked</b> (not editable). Use “Download CSV” to keep a hard copy.
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-white/75 p-4 text-sm text-slate-700">
+                Attendance has been saved and is now <b>locked</b>. You can no longer edit this session.
+              </div>
+            ) : session ? (
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-white/75 p-4 text-sm text-slate-700">
+                Session is open. Mark students below, then save. Finalize only when you are completely done.
               </div>
             ) : null}
           </section>
 
-          <section className="portal-surface p-5">
-            <h2 className="text-lg font-semibold">Mark students</h2>
-            <p className="mt-1 text-sm portal-muted">
-              {locked
-                ? "This session is locked."
-                : "Select a status for each student, then Save. (Visible after refresh.)"}
-            </p>
+          <section className="portal-surface p-4 sm:p-5">
+            <div className="flex flex-col gap-2">
+              <h2 className="text-lg font-semibold text-slate-900">Mark students</h2>
+              <p className="text-sm text-slate-600">
+                {locked
+                  ? "This attendance session is locked."
+                  : "Choose a status for each student, then save the marks."}
+              </p>
+            </div>
 
             {!session ? (
-              <div className="mt-4 text-sm portal-muted">Create/open a session first.</div>
+              <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-white/60 p-4 text-sm text-slate-600">
+                Create or open a session first.
+              </div>
             ) : students.length === 0 ? (
-              <div className="mt-4 text-sm portal-muted">No students enrolled for this class/term.</div>
+              <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-white/60 p-4 text-sm text-slate-600">
+                No students are enrolled for this class in this term.
+              </div>
             ) : (
-              <form action={saveMarks} className="mt-4 grid gap-3">
+              <form action={saveMarks} className="mt-4 grid gap-4">
                 <input type="hidden" name="assignmentId" value={selected.id} />
                 <input type="hidden" name="sessionId" value={session.id} />
 
-                <div className="overflow-hidden rounded-2xl border">
-                  <div className="grid grid-cols-2 border-b bg-[color:var(--ohs-surface)] px-4 py-2 text-sm font-medium text-slate-700">
-                    <div>Student</div>
-                    <div>Status</div>
-                  </div>
+                <div className="grid gap-3">
+                  {students.map((s: any) => {
+                    const existing = marks.get(s.id);
 
-                  <ul>
-                    {students.map((s: any) => {
-                      const existing = marks.get(s.id);
-                      return (
-                        <li key={s.id} className="grid grid-cols-2 items-center gap-3 border-b last:border-b-0 px-4 py-3">
-                          <div className="text-sm text-[color:var(--ohs-charcoal)]">{s.full_name}</div>
-                          <select
-                            className="portal-select"
-                            name={`status_${s.id}`}
-                            defaultValue={existing?.status ?? "present"}
-                            disabled={locked}
-                          >
-                            <option value="present">Present</option>
-                            <option value="absent">Absent</option>
-                            <option value="late">Late</option>
-                            <option value="excused">Excused</option>
-                          </select>
-                        </li>
-                      );
-                    })}
-                  </ul>
+                    return (
+                      <div
+                        key={s.id}
+                        className="rounded-2xl border border-slate-200 bg-white/80 p-4"
+                      >
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold text-slate-900 sm:text-base">
+                              {s.full_name}
+                            </div>
+                            <div className="mt-1 text-xs text-slate-500">
+                              Student attendance status
+                            </div>
+                          </div>
+
+                          <div className="w-full sm:w-[220px]">
+                            <select
+                              className="portal-select w-full"
+                              name={`status_${s.id}`}
+                              defaultValue={existing?.status ?? "present"}
+                              disabled={locked}
+                            >
+                              <option value="present">Present</option>
+                              <option value="absent">Absent</option>
+                              <option value="late">Late</option>
+                              <option value="sick">Sick</option>
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
 
                 {!locked ? (
-                  <button className="portal-btn portal-btn-primary w-fit" type="submit">
+                  <button className="portal-btn portal-btn-primary w-full sm:w-fit" type="submit">
                     Save marks
                   </button>
                 ) : null}
