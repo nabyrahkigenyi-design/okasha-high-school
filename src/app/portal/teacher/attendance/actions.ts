@@ -5,7 +5,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { revalidatePath } from "next/cache";
 import { getAssignmentOrNull, getSession } from "./queries";
 
-const VALID = new Set(["present", "absent", "late", "excused"]);
+const VALID = new Set(["present", "absent", "late", "sick"]);
 
 export async function ensureSession(formData: FormData) {
   const me = await requireRole(["teacher"]);
@@ -44,15 +44,14 @@ export async function saveMarks(formData: FormData) {
   const assignment = await getAssignmentOrNull(assignmentId);
   if (!assignment) throw new Error("Forbidden");
 
-  // hard lock if finalized
-  const session = await getSession(assignmentId, String(formData.get("date") ?? ""));
-  // If page doesn't send date, fetch by id:
   const sb = supabaseAdmin();
+
   const { data: sessionRow, error: sessErr } = await sb
     .from("attendance_sessions")
     .select("id, finalized_at")
     .eq("id", sessionId)
     .maybeSingle();
+
   if (sessErr) throw new Error(sessErr.message);
   if (sessionRow?.finalized_at) throw new Error("Session finalized");
 
@@ -60,8 +59,9 @@ export async function saveMarks(formData: FormData) {
   for (const [k, v] of formData.entries()) {
     if (!k.startsWith("status_")) continue;
     const studentId = k.replace("status_", "");
-    const status = String(v);
+    const status = String(v).toLowerCase().trim();
     if (!VALID.has(status)) continue;
+
     rows.push({
       session_id: sessionId,
       student_id: studentId,
@@ -94,7 +94,6 @@ export async function finalizeSession(formData: FormData) {
 
   const sb = supabaseAdmin();
 
-  // Ensure session belongs to that assignment
   const { data: session, error: sessErr } = await sb
     .from("attendance_sessions")
     .select("id, finalized_at")

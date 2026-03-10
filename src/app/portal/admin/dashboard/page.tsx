@@ -1,6 +1,6 @@
-import Link from "next/link";
 import { requireRole } from "@/lib/rbac";
 import { WatermarkedSection } from "@/components/WatermarkedSection";
+import { getSchoolDashboardSnapshot } from "./queries";
 
 function StatCard({
   label,
@@ -8,222 +8,422 @@ function StatCard({
   hint,
 }: {
   label: string;
-  value: string;
+  value: string | number;
   hint?: string;
 }) {
   return (
-    <div className="rounded-2xl border bg-white/80 p-5 shadow-sm">
+    <div className="rounded-2xl border border-slate-200 bg-white/85 p-4 shadow-sm sm:p-5">
       <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">
         {label}
       </div>
-      <div className="mt-2 text-2xl font-extrabold text-slate-900">{value}</div>
+      <div className="mt-2 text-2xl font-extrabold text-slate-900 sm:text-3xl">
+        {value}
+      </div>
       {hint ? <div className="mt-1 text-sm text-slate-600">{hint}</div> : null}
     </div>
   );
 }
 
-function QuickCard({
+function SectionCard({
   title,
-  desc,
-  href,
-}: {
-  title: string;
-  desc: string;
-  href: string;
-}) {
-  return (
-    <Link
-      href={href}
-      className="group rounded-2xl border bg-white/80 p-5 shadow-sm transition hover:-translate-y-[1px] hover:shadow-md"
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-base font-semibold text-slate-900 group-hover:text-slate-950">
-            {title}
-          </div>
-          <div className="mt-1 text-sm text-slate-600">{desc}</div>
-        </div>
-
-        <span className="mt-0.5 inline-flex h-9 w-9 items-center justify-center rounded-xl border bg-white text-slate-700 transition group-hover:border-slate-300 group-hover:text-slate-900">
-          →
-        </span>
-      </div>
-    </Link>
-  );
-}
-
-function Tip({
-  title,
+  subtitle,
   children,
 }: {
   title: string;
+  subtitle?: string;
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border bg-white/80 p-5 shadow-sm">
-      <div className="text-sm font-semibold text-slate-900">{title}</div>
-      <div className="mt-2 text-sm text-slate-700">{children}</div>
+    <section className="portal-surface p-4 sm:p-5">
+      <div>
+        <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
+        {subtitle ? <p className="mt-1 text-sm text-slate-600">{subtitle}</p> : null}
+      </div>
+
+      <div className="mt-4">{children}</div>
+    </section>
+  );
+}
+
+function TrackBadge({ track }: { track: "secular" | "islamic" }) {
+  return (
+    <span
+      className={`portal-badge ${
+        track === "islamic" ? "portal-badge-islamic" : "portal-badge-secular"
+      }`}
+    >
+      {track === "islamic" ? "Islamic Theology" : "Secular"}
+    </span>
+  );
+}
+
+function EnrollmentRow({
+  className,
+  level,
+  track,
+  count,
+  totalStudents,
+}: {
+  className: string;
+  level?: string | null;
+  track: "secular" | "islamic";
+  count: number;
+  totalStudents: number;
+}) {
+  const percentage = totalStudents > 0 ? Math.round((count / totalStudents) * 100) : 0;
+  const width = totalStudents > 0 ? Math.max(6, percentage) : 0;
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white/70 p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="truncate text-base font-semibold text-slate-900">{className}</div>
+            <TrackBadge track={track} />
+          </div>
+
+          <div className="mt-1 text-sm text-slate-600">
+            {level ? `${level} • ` : ""}
+            {count} enrolled student{count === 1 ? "" : "s"}
+          </div>
+        </div>
+
+        <div className="text-sm font-medium text-slate-700">{percentage}%</div>
+      </div>
+
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200">
+        <div
+          className="h-full rounded-full bg-[color:var(--ohs-dark-green)]"
+          style={{ width: `${width}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function AnnouncementCard({ item }: { item: any }) {
+  const scope = item.class_groups?.name
+    ? `${item.class_groups.name}`
+    : item.academic_terms?.name
+      ? `${item.academic_terms.name} • General`
+      : "General";
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white/70 p-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <div className="text-base font-semibold text-slate-900">{item.title}</div>
+          <div className="mt-1 text-xs text-slate-500">
+            {scope} • {new Date(item.created_at).toLocaleDateString()}
+          </div>
+        </div>
+      </div>
+
+      <p className="mt-3 line-clamp-3 text-sm text-slate-700">{item.body}</p>
+    </div>
+  );
+}
+
+function TimetableTable({ items }: { items: any[] }) {
+  return (
+    <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white/80">
+      <table className="w-full min-w-[900px] text-left text-sm">
+        <thead className="bg-slate-50 text-slate-700">
+          <tr>
+            <th className="px-4 py-3 font-semibold">Day</th>
+            <th className="px-4 py-3 font-semibold">Period</th>
+            <th className="px-4 py-3 font-semibold">Time</th>
+            <th className="px-4 py-3 font-semibold">Class</th>
+            <th className="px-4 py-3 font-semibold">Subject</th>
+            <th className="px-4 py-3 font-semibold">Teacher</th>
+            <th className="px-4 py-3 font-semibold">Room</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((row) => (
+            <tr key={row.id} className="border-t border-slate-200">
+              <td className="px-4 py-3 text-slate-700">{row.day_label}</td>
+              <td className="px-4 py-3 text-slate-700">{row.period_no ?? "—"}</td>
+              <td className="px-4 py-3 text-slate-700">
+                {row.start_time && row.end_time
+                  ? `${row.start_time.slice(0, 5)} - ${row.end_time.slice(0, 5)}`
+                  : "—"}
+              </td>
+              <td className="px-4 py-3">
+                <div className="font-medium text-slate-900">{row.class_groups?.name ?? "—"}</div>
+                <div className="text-xs text-slate-500">{row.class_groups?.level ?? ""}</div>
+              </td>
+              <td className="px-4 py-3 text-slate-700">
+                {row.subjects?.code ? `${row.subjects.code} — ` : ""}
+                {row.subjects?.name ?? "—"}
+              </td>
+              <td className="px-4 py-3 text-slate-700">{row.teachers?.full_name ?? "—"}</td>
+              <td className="px-4 py-3 text-slate-700">{row.room ?? "—"}</td>
+            </tr>
+          ))}
+
+          {items.length === 0 ? (
+            <tr>
+              <td colSpan={7} className="px-4 py-6 text-center text-sm text-slate-500">
+                No timetable slots available.
+              </td>
+            </tr>
+          ) : null}
+        </tbody>
+      </table>
     </div>
   );
 }
 
 export default async function AdminDashboard() {
   const me = await requireRole(["admin"]);
+  const data = await getSchoolDashboardSnapshot();
 
-  // Keep dashboard server-safe: no extra queries yet.
-  // We can hook real counts later (students, teachers, classes, etc.).
-  const now = new Date();
-  const today = now.toLocaleDateString(undefined, {
-    weekday: "long",
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
+  const secularEnrollment = data.enrollmentByClass.filter(
+    (item: any) => item.track_key === "secular"
+  );
+
+  const islamicEnrollment = data.enrollmentByClass.filter(
+    (item: any) => item.track_key === "islamic"
+  );
+
+  const emptyClasses = data.enrollmentByClass.filter(
+    (item: any) => item.enrolled_count === 0
+  ).length;
+
+  const attendanceRate =
+    data.attendanceSummary.totalMarked > 0
+      ? Math.round((data.attendanceSummary.present / data.attendanceSummary.totalMarked) * 100)
+      : 0;
 
   return (
     <WatermarkedSection tone="portal" variant="mixed">
       <div className="grid gap-6">
-        {/* Header */}
-        <section className="portal-surface p-6">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
+        <section className="portal-surface p-4 sm:p-6">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div className="min-w-0">
               <h1 className="portal-title">Admin Dashboard</h1>
               <p className="portal-subtitle">
-                Welcome back,{" "}
-                <span className="font-semibold text-slate-900">{me.full_name}</span>.
+                Welcome back, <span className="font-semibold text-slate-900">{me.full_name}</span>.
               </p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <Link className="portal-btn portal-btn-primary" href="/portal/admin/academics">
-                Academics
-              </Link>
-              <Link className="portal-btn" href="/portal/admin/users">
-                Users
-              </Link>
-              <Link className="portal-btn" href="/portal/admin/news">
-                News
-              </Link>
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="portal-badge">
+                Today: {new Date(data.today).toLocaleDateString()}
+              </span>
+              {data.activeTerm ? (
+                <span className="portal-badge portal-badge-secular">
+                  Active term: {data.activeTerm.name}
+                </span>
+              ) : (
+                <span className="portal-badge">No active term</span>
+              )}
             </div>
-          </div>
-
-          <div className="mt-4 flex flex-wrap items-center gap-2 text-sm">
-            <span className="portal-badge">Role: Admin</span>
-            <span className="portal-badge">Today: {today}</span>
-            <span className="portal-badge portal-badge-secular">Portal: Online</span>
           </div>
         </section>
 
-        {/* Stats */}
-        <div className="grid gap-4 md:grid-cols-3">
-          <StatCard label="System status" value="Online" hint="All modules available" />
-          <StatCard label="Security" value="RBAC" hint="Server-enforced role checks" />
-          <StatCard label="Caching" value="Optimized" hint="Public pages cached, portal dynamic" />
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+          <StatCard label="Teachers" value={data.teacherCount} hint="Active teaching staff" />
+          <StatCard label="Parents" value={data.parentCount} hint="Registered parent accounts" />
+          <StatCard label="Students" value={data.studentCount} hint="Active enrolled learners" />
+          <StatCard label="Classes" value={data.classCount} hint="Currently active classes" />
+          <StatCard
+            label="Attendance today"
+            value={`${attendanceRate}%`}
+            hint={`${data.attendanceSummary.present} present • ${data.attendanceSummary.absent} absent • ${data.attendanceSummary.sick} sick`}
+          />
         </div>
 
-        {/* Quick actions */}
-        <section className="portal-surface p-6">
-          <div className="flex items-end justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-semibold text-slate-900">Quick actions</h2>
-              <p className="mt-1 text-sm text-slate-600">
-                Jump straight into what you manage most.
-              </p>
+        <SectionCard
+          title="School overview"
+          subtitle="A quick operational summary for the current school term."
+        >
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-2xl border border-slate-200 bg-white/75 p-4">
+              <div className="text-sm font-semibold text-slate-900">Current term</div>
+              <div className="mt-2 text-sm text-slate-700">
+                {data.activeTerm ? (
+                  <>
+                    <div className="font-medium text-slate-900">{data.activeTerm.name}</div>
+                    <div className="mt-1">
+                      {data.activeTerm.starts_on} → {data.activeTerm.ends_on}
+                    </div>
+                  </>
+                ) : (
+                  "No active term has been set."
+                )}
+              </div>
             </div>
-            <Link className="text-sm underline" href="/portal/admin/settings">
-              Go to Settings
-            </Link>
-          </div>
 
-          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <QuickCard
-              title="Academics"
-              desc="Terms, classes, subjects, assignments, enrollments"
-              href="/portal/admin/academics"
-            />
-            <QuickCard
-              title="Admissions"
-              desc="Update admissions content and requirements"
-              href="/portal/admin/admissions"
-            />
-            <QuickCard
-              title="Calendar"
-              desc="School events and term schedules"
-              href="/portal/admin/calendar"
-            />
-            <QuickCard
-              title="Fees"
-              desc="Tuition & fees guide management"
-              href="/portal/admin/fees"
-            />
-            <QuickCard
-              title="News"
-              desc="Publish announcements and updates"
-              href="/portal/admin/news"
-            />
-            <QuickCard
-              title="Policies"
-              desc="Upload and manage school policies"
-              href="/portal/admin/policies"
-            />
-            <QuickCard
-              title="Programs"
-              desc="Secular + Islamic track programs"
-              href="/portal/admin/programs"
-            />
-            <QuickCard
-              title="Staff"
-              desc="Staff directory and profiles"
-              href="/portal/admin/staff"
-            />
-            <QuickCard
-              title="Users"
-              desc="Admins, teachers, students, parents"
-              href="/portal/admin/users"
-            />
-          </div>
-        </section>
-
-        {/* Premium “control center” row */}
-        <div className="grid gap-4 lg:grid-cols-3">
-          <Tip title="Recommended workflow">
-            <ol className="list-decimal space-y-1 pl-5">
-              <li>
-                In <span className="font-semibold">Academics</span>, set the active term.
-              </li>
-              <li>Create classes and subjects for both tracks.</li>
-              <li>Assign teachers to classes/subjects.</li>
-              <li>Enroll students in the correct class per term.</li>
-            </ol>
-          </Tip>
-
-          <Tip title="Today’s checklist">
-            <ul className="list-disc space-y-1 pl-5">
-              <li>Confirm the active term is correct.</li>
-              <li>Check News for announcements that need publishing.</li>
-              <li>Verify Calendar has upcoming school events.</li>
-            </ul>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Link className="portal-btn" href="/portal/admin/academics">
-                Check Term
-              </Link>
-              <Link className="portal-btn" href="/portal/admin/news">
-                Post News
-              </Link>
-              <Link className="portal-btn" href="/portal/admin/calendar">
-                Update Calendar
-              </Link>
+            <div className="rounded-2xl border border-slate-200 bg-white/75 p-4">
+              <div className="text-sm font-semibold text-slate-900">Enrollment coverage</div>
+              <div className="mt-2 text-sm text-slate-700">
+                {emptyClasses > 0
+                  ? `${emptyClasses} class${emptyClasses === 1 ? "" : "es"} currently have no enrolled students.`
+                  : "All active classes currently have enrolled students."}
+              </div>
             </div>
-          </Tip>
 
-          <Tip title="Next upgrades (optional)">
-            <ul className="list-disc space-y-1 pl-5">
-              <li>Show real counts (students, teachers, classes, enrollments).</li>
-              <li>Show “recent admin actions” activity feed.</li>
-              <li>Highlight missing setup (no active term, no classes, etc.).</li>
-            </ul>
-          </Tip>
+            <div className="rounded-2xl border border-slate-200 bg-white/75 p-4">
+              <div className="text-sm font-semibold text-slate-900">Announcements</div>
+              <div className="mt-2 text-sm text-slate-700">
+                {data.announcements.length} recent announcement
+                {data.announcements.length === 1 ? "" : "s"} available.
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white/75 p-4">
+              <div className="text-sm font-semibold text-slate-900">Timetable slots</div>
+              <div className="mt-2 text-sm text-slate-700">
+                {data.weeklyTimetable.length} lesson slot
+                {data.weeklyTimetable.length === 1 ? "" : "s"} in the active term timetable.
+              </div>
+            </div>
+          </div>
+        </SectionCard>
+
+        <SectionCard
+          title="Enrollment by class"
+          subtitle={
+            data.activeTerm
+              ? `Student distribution for ${data.activeTerm.name}.`
+              : "Set an active term to view enrollment by class."
+          }
+        >
+          {!data.activeTerm ? (
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 p-5 text-sm text-slate-600">
+              No active term is selected yet. Once an active term is set, this section will show
+              student totals for each class.
+            </div>
+          ) : (
+            <div className="grid gap-6 xl:grid-cols-2">
+              <div>
+                <div className="mb-3 flex items-center gap-2">
+                  <div className="text-sm font-semibold text-slate-900">Secular classes</div>
+                  <TrackBadge track="secular" />
+                </div>
+
+                <div className="grid gap-3">
+                  {secularEnrollment.length > 0 ? (
+                    secularEnrollment.map((item: any) => (
+                      <EnrollmentRow
+                        key={item.id}
+                        className={item.name}
+                        level={item.level}
+                        track="secular"
+                        count={item.enrolled_count}
+                        totalStudents={data.studentCount}
+                      />
+                    ))
+                  ) : (
+                    <div className="rounded-2xl border border-slate-200 bg-white/70 p-4 text-sm text-slate-600">
+                      No secular classes found.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <div className="mb-3 flex items-center gap-2">
+                  <div className="text-sm font-semibold text-slate-900">
+                    Islamic theology classes
+                  </div>
+                  <TrackBadge track="islamic" />
+                </div>
+
+                <div className="grid gap-3">
+                  {islamicEnrollment.length > 0 ? (
+                    islamicEnrollment.map((item: any) => (
+                      <EnrollmentRow
+                        key={item.id}
+                        className={item.name}
+                        level={item.level}
+                        track="islamic"
+                        count={item.enrolled_count}
+                        totalStudents={data.studentCount}
+                      />
+                    ))
+                  ) : (
+                    <div className="rounded-2xl border border-slate-200 bg-white/70 p-4 text-sm text-slate-600">
+                      No Islamic theology classes found.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </SectionCard>
+
+        <div className="grid gap-6 xl:grid-cols-[1fr_1.25fr]">
+          <SectionCard
+            title="Attendance today"
+            subtitle="Attendance summary based on teacher-marked sessions for today."
+          >
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+              <StatCard
+                label="Present"
+                value={data.attendanceSummary.present}
+                hint="Marked present"
+              />
+              <StatCard
+                label="Absent"
+                value={data.attendanceSummary.absent}
+                hint="Marked absent"
+              />
+              <StatCard
+                label="Late"
+                value={data.attendanceSummary.late}
+                hint="Marked late"
+              />
+              <StatCard
+                label="Sick"
+                value={data.attendanceSummary.sick}
+                hint="Marked sick"
+              />
+              <StatCard
+                label="Marked"
+                value={data.attendanceSummary.totalMarked}
+                hint="Total attendance marks today"
+              />
+            </div>
+          </SectionCard>
+
+          <SectionCard
+            title="Recent announcements"
+            subtitle="Latest notices created for the school portal."
+          >
+            <div className="grid gap-3">
+              {data.announcements.length > 0 ? (
+                data.announcements.map((item: any) => (
+                  <AnnouncementCard key={item.id} item={item} />
+                ))
+              ) : (
+                <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 p-5 text-sm text-slate-600">
+                  No announcements available yet.
+                </div>
+              )}
+            </div>
+          </SectionCard>
         </div>
+
+        <SectionCard
+          title="Weekly school timetable"
+          subtitle={
+            data.activeTerm
+              ? `General timetable for ${data.activeTerm.name}.`
+              : "Set an active term to show the weekly timetable."
+          }
+        >
+          {!data.activeTerm ? (
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 p-5 text-sm text-slate-600">
+              No active term is selected yet. Once an active term is set, the weekly timetable
+              will appear here.
+            </div>
+          ) : (
+            <TimetableTable items={data.weeklyTimetable} />
+          )}
+        </SectionCard>
       </div>
     </WatermarkedSection>
   );
