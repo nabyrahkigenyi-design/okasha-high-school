@@ -3,16 +3,17 @@ import { requireRole } from "@/lib/rbac";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 
 const DAYS = [
-  { key: "mon", label: "Mon" },
-  { key: "tue", label: "Tue" },
-  { key: "wed", label: "Wed" },
-  { key: "thu", label: "Thu" },
-  { key: "fri", label: "Fri" },
-  { key: "sat", label: "Sat" },
-  { key: "sun", label: "Sun" },
+  { key: "mon", label: "Mon", long: "Monday" },
+  { key: "tue", label: "Tue", long: "Tuesday" },
+  { key: "wed", label: "Wed", long: "Wednesday" },
+  { key: "thu", label: "Thu", long: "Thursday" },
+  { key: "fri", label: "Fri", long: "Friday" },
+  { key: "sat", label: "Sat", long: "Saturday" },
+  { key: "sun", label: "Sun", long: "Sunday" },
 ] as const;
 
 type DayKey = (typeof DAYS)[number]["key"];
+type Rel<T> = T | T[] | null | undefined;
 
 function todayDayKey(): DayKey {
   const d = new Date().getDay();
@@ -39,7 +40,6 @@ function fmtTime(t: string | null) {
   return String(t).slice(0, 5);
 }
 
-type Rel<T> = T | T[] | null | undefined;
 function one<T>(v: Rel<T>): T | null {
   if (!v) return null;
   return Array.isArray(v) ? (v[0] ?? null) : v;
@@ -52,7 +52,6 @@ export default async function TeacherTimetablePage({
 }) {
   const me = await requireRole(["teacher"]);
   const sb = supabaseAdmin();
-
   const params = await searchParams;
 
   const { data: terms, error: termErr } = await sb
@@ -98,15 +97,17 @@ export default async function TeacherTimetablePage({
   if (ttErr) throw new Error(ttErr.message);
 
   const termName = terms?.find((t: any) => t.id === termId)?.name ?? `Term ${termId}`;
+  const selectedDay = DAYS.find((d) => d.key === day);
 
   return (
     <div className="grid gap-6">
-      <section className="portal-surface p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+      <section className="portal-surface p-4 sm:p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <h1 className="portal-title">My Timetable</h1>
             <p className="portal-subtitle">
-              Term: <span className="font-medium">{termName}</span>
+              Term: <span className="font-medium text-slate-900">{termName}</span> • Day:{" "}
+              <span className="font-medium text-slate-900">{selectedDay?.long ?? day}</span>
             </p>
           </div>
         </div>
@@ -128,14 +129,14 @@ export default async function TeacherTimetablePage({
             <select className="portal-select" name="day" defaultValue={day}>
               {DAYS.map((d) => (
                 <option key={d.key} value={d.key}>
-                  {d.label}
+                  {d.long}
                 </option>
               ))}
             </select>
           </label>
 
           <div className="flex items-end">
-            <button className="portal-btn portal-btn-primary" type="submit">
+            <button className="portal-btn portal-btn-primary w-full md:w-auto" type="submit">
               Apply
             </button>
           </div>
@@ -145,8 +146,13 @@ export default async function TeacherTimetablePage({
           {DAYS.map((d) => {
             const active = d.key === day;
             const href = `/portal/teacher/timetable?termId=${termId}&day=${d.key}`;
+
             return (
-              <Link key={d.key} href={href} className={`portal-btn whitespace-nowrap ${active ? "portal-btn-primary" : ""}`}>
+              <Link
+                key={d.key}
+                href={href}
+                className={`portal-btn whitespace-nowrap ${active ? "portal-btn-primary" : ""}`}
+              >
                 {d.label}
               </Link>
             );
@@ -154,12 +160,14 @@ export default async function TeacherTimetablePage({
         </div>
       </section>
 
-      <section className="portal-surface p-5">
-        <h2 className="text-lg font-semibold">Lessons</h2>
-        <p className="mt-1 text-sm portal-muted">Your teaching schedule for the selected day.</p>
+      <section className="portal-surface p-4 sm:p-5">
+        <h2 className="text-lg font-semibold text-slate-900">Lessons</h2>
+        <p className="mt-1 text-sm text-slate-600">Your teaching schedule for the selected day.</p>
 
         {(lessons ?? []).length === 0 ? (
-          <div className="mt-4 text-sm portal-muted">No lessons assigned for this day.</div>
+          <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-white/60 p-4 text-sm text-slate-600">
+            No lessons assigned for this day.
+          </div>
         ) : (
           <div className="mt-4 grid gap-3">
             {(lessons ?? []).map((x: any) => {
@@ -167,23 +175,30 @@ export default async function TeacherTimetablePage({
               const cg = one(x.class_groups) as any;
 
               return (
-                <div key={x.id} className="rounded-2xl border bg-white/70 p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
+                <div key={x.id} className="rounded-2xl border border-slate-200 bg-white/80 p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0">
-                      <div className="text-sm font-semibold text-[color:var(--ohs-charcoal)] truncate">
+                      <div className="text-sm font-semibold text-slate-900 sm:text-base">
                         Period {x.period_no ?? "—"} • {subj?.name ?? "Subject"}
                       </div>
-                      <div className="mt-1 text-xs text-slate-500">
+                      <div className="mt-1 text-sm text-slate-600">
                         {fmtTime(x.start_time)}–{fmtTime(x.end_time)}
                         {cg?.name ? ` • ${cg.name}` : ""}
                         {x.room ? ` • Room: ${x.room}` : ""}
                       </div>
+
+                      {x.note ? (
+                        <div className="mt-2 whitespace-pre-wrap text-sm text-slate-700">
+                          {x.note}
+                        </div>
+                      ) : null}
                     </div>
 
-                    {subj?.code ? <span className="portal-badge">{subj.code}</span> : null}
+                    <div className="flex flex-wrap gap-2">
+                      {subj?.code ? <span className="portal-badge">{subj.code}</span> : null}
+                      {cg?.name ? <span className="portal-badge">{cg.name}</span> : null}
+                    </div>
                   </div>
-
-                  {x.note ? <div className="mt-2 text-sm text-slate-700 whitespace-pre-wrap">{x.note}</div> : null}
                 </div>
               );
             })}

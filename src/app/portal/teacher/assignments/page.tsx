@@ -5,9 +5,14 @@ import { getSelectedAssignmentOrNull, listAssignmentOptions, listMyAssignmentsFo
 import { AttachmentField } from "./AttachmentField";
 
 type Rel<T> = T | T[] | null | undefined;
+
 function one<T>(v: Rel<T>): T | null {
   if (!v) return null;
   return Array.isArray(v) ? (v[0] ?? null) : v;
+}
+
+function InfoPill({ text }: { text: string }) {
+  return <span className="portal-badge">{text}</span>;
 }
 
 export default async function TeacherAssignmentsPage({
@@ -30,12 +35,12 @@ export default async function TeacherAssignmentsPage({
     <div className="grid gap-6">
       <ToastGate ok={params.ok} err={params.err} okText="Assignment saved." />
 
-      <section className="portal-surface p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
+      <section className="portal-surface p-4 sm:p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
             <h1 className="portal-title">Assignments</h1>
             <p className="portal-subtitle">
-              Create coursework for one of your assigned class/subject combinations.
+              Create coursework for one of your assigned class and subject combinations.
             </p>
           </div>
 
@@ -69,24 +74,32 @@ export default async function TeacherAssignmentsPage({
           </label>
 
           <div className="flex items-end">
-            <button className="portal-btn portal-btn-primary" type="submit">
+            <button className="portal-btn portal-btn-primary w-full md:w-auto" type="submit">
               Open
             </button>
           </div>
         </form>
 
         {selected ? (
-          <div className="mt-4 rounded-xl border bg-white/70 p-4">
-            <div className="font-medium">
-              {cg?.name ?? "Class"} • {subj?.name ?? "Subject"}
-            </div>
-            <div className="mt-1 text-xs text-slate-500">
-              {term?.name ?? "Term"} • {cg?.level ?? ""} •{" "}
-              {(subj as any)?.track === "islamic" ? "Islamic Theology" : "Secular"}
+          <div className="mt-4 rounded-2xl border border-slate-200 bg-white/75 p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <div className="text-base font-semibold text-slate-900">
+                  {cg?.name ?? "Class"} • {subj?.name ?? "Subject"}
+                </div>
+                <div className="mt-1 text-sm text-slate-600">
+                  {term?.name ?? "Term"} • {cg?.level ?? ""} •{" "}
+                  {subj?.track === "islamic" ? "Islamic Theology" : "Secular"}
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <InfoPill text={`${items.length} assignment${items.length === 1 ? "" : "s"}`} />
+              </div>
             </div>
           </div>
         ) : (
-          <div className="mt-4 text-sm portal-muted">
+          <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-white/60 p-4 text-sm text-slate-600">
             {options.length === 0
               ? "You do not have any active teaching assignments yet."
               : "Select a class and subject to continue."}
@@ -96,8 +109,8 @@ export default async function TeacherAssignmentsPage({
 
       {selected ? (
         <>
-          <section className="portal-surface p-5">
-            <h2 className="text-lg font-semibold">Create new assignment</h2>
+          <section className="portal-surface p-4 sm:p-5">
+            <h2 className="text-lg font-semibold text-slate-900">Create new assignment</h2>
 
             <form action={createTeacherAssignment} className="mt-4 grid gap-3">
               <input type="hidden" name="teacher_assignment_id" value={selected.id} />
@@ -127,61 +140,68 @@ export default async function TeacherAssignmentsPage({
                 <AttachmentField />
               </label>
 
-              <button className="portal-btn portal-btn-primary w-fit" type="submit">
+              <button className="portal-btn portal-btn-primary w-full sm:w-fit" type="submit">
                 Create assignment
               </button>
             </form>
           </section>
 
-          <section className="portal-surface p-5">
-            <div className="flex items-center justify-between gap-3">
-              <h2 className="text-lg font-semibold">My created assignments</h2>
+          <section className="portal-surface p-4 sm:p-5">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <h2 className="text-lg font-semibold text-slate-900">My created assignments</h2>
               <span className="portal-badge">{items.length} total</span>
             </div>
 
-            <div className="mt-4 divide-y rounded-xl border bg-white/70">
-              {items.map((item: any) => (
-                <div key={item.id} className="px-4 py-4 flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="font-medium">{item.title}</div>
-                    <div className="text-xs text-slate-500">
-                      Due: {item.due_at ? new Date(item.due_at).toLocaleString() : "No due date"}
+            {items.length === 0 ? (
+              <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-white/60 p-4 text-sm text-slate-600">
+                No assignments created yet for this class and subject.
+              </div>
+            ) : (
+              <div className="mt-4 grid gap-3">
+                {items.map((item: any) => (
+                  <div
+                    key={item.id}
+                    className="rounded-2xl border border-slate-200 bg-white/80 p-4"
+                  >
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="min-w-0">
+                        <div className="text-base font-semibold text-slate-900">{item.title}</div>
+                        <div className="mt-1 text-xs text-slate-500">
+                          Due: {item.due_at ? new Date(item.due_at).toLocaleString() : "No due date"}
+                        </div>
+
+                        {item.description ? (
+                          <p className="mt-3 whitespace-pre-wrap text-sm text-slate-700">
+                            {item.description}
+                          </p>
+                        ) : null}
+
+                        {item.attachment_url ? (
+                          <a
+                            className="mt-3 inline-block text-sm underline"
+                            href={item.attachment_url}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Open attachment
+                          </a>
+                        ) : (
+                          <div className="mt-3 text-xs text-slate-500">No file attached</div>
+                        )}
+                      </div>
+
+                      <form action={deleteTeacherAssignmentItem}>
+                        <input type="hidden" name="id" value={item.id} />
+                        <input type="hidden" name="teacher_assignment_id" value={selected.id} />
+                        <button className="portal-btn portal-btn-danger w-full sm:w-auto" type="submit">
+                          Delete
+                        </button>
+                      </form>
                     </div>
-
-                    {item.description ? (
-                      <p className="mt-2 text-sm text-slate-700 whitespace-pre-wrap">{item.description}</p>
-                    ) : null}
-
-                    {item.attachment_url ? (
-                      <a
-                        className="mt-2 inline-block text-sm underline"
-                        href={item.attachment_url}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        Open attachment
-                      </a>
-                    ) : (
-                      <div className="mt-2 text-xs text-slate-500">No file</div>
-                    )}
                   </div>
-
-                  <form action={deleteTeacherAssignmentItem}>
-                    <input type="hidden" name="id" value={item.id} />
-                    <input type="hidden" name="teacher_assignment_id" value={selected.id} />
-                    <button className="portal-btn portal-btn-danger" type="submit">
-                      Delete
-                    </button>
-                  </form>
-                </div>
-              ))}
-
-              {items.length === 0 ? (
-                <div className="px-4 py-6 text-sm portal-muted">
-                  No assignments created yet for this class/subject.
-                </div>
-              ) : null}
-            </div>
+                ))}
+              </div>
+            )}
           </section>
         </>
       ) : null}
