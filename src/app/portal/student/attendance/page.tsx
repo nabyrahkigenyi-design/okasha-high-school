@@ -1,10 +1,34 @@
+import Link from "next/link";
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { getActiveTermOrNull, getMyEnrollmentOrNull, getStudentOrThrow, one } from "../queries";
+import {
+  getActiveTermOrNull,
+  getMyEnrollmentOrNull,
+  getStudentOrThrow,
+  one,
+} from "../queries";
 
-type Status = "present" | "absent" | "late" | "excused";
+type Status = "present" | "absent" | "late" | "sick";
 
 function Badge({ text }: { text: string }) {
   return <span className="portal-badge">{text}</span>;
+}
+
+function StatCard({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string | number;
+  hint?: string;
+}) {
+  return (
+    <div className="rounded-2xl border bg-white/70 p-4">
+      <div className="text-xs font-semibold tracking-widest text-slate-500">{label}</div>
+      <div className="mt-2 text-2xl font-bold text-[color:var(--ohs-charcoal)]">{value}</div>
+      {hint ? <div className="mt-1 text-xs text-slate-500">{hint}</div> : null}
+    </div>
+  );
 }
 
 export default async function StudentAttendancePage({
@@ -14,7 +38,6 @@ export default async function StudentAttendancePage({
 }) {
   const params = await searchParams;
   const student = await getStudentOrThrow();
-
   const sb = supabaseAdmin();
 
   const { data: terms, error: termErr } = await sb
@@ -26,7 +49,8 @@ export default async function StudentAttendancePage({
   if (termErr) throw new Error(termErr.message);
 
   const activeTerm = await getActiveTermOrNull();
-  const selectedTermId = params.termId ? Number(params.termId) : activeTerm?.id ?? terms?.[0]?.id ?? null;
+  const selectedTermId =
+    params.termId ? Number(params.termId) : activeTerm?.id ?? terms?.[0]?.id ?? null;
 
   if (!selectedTermId) {
     return (
@@ -40,7 +64,6 @@ export default async function StudentAttendancePage({
   const enrollment = await getMyEnrollmentOrNull(selectedTermId);
   const cg: any = one(enrollment?.class_groups);
 
-  // If not enrolled, show message
   if (!enrollment?.class_id) {
     return (
       <div className="grid gap-6">
@@ -73,7 +96,6 @@ export default async function StudentAttendancePage({
     );
   }
 
-  // 1) teacher assignments for this term/class
   const { data: tas, error: taErr } = await sb
     .from("teacher_assignments")
     .select("id")
@@ -84,7 +106,6 @@ export default async function StudentAttendancePage({
 
   const assignmentIds = (tas ?? []).map((x: any) => x.id);
 
-  // 2) sessions for those assignments
   const { data: sessions, error: sessErr } = assignmentIds.length
     ? await sb
         .from("attendance_sessions")
@@ -100,7 +121,6 @@ export default async function StudentAttendancePage({
   const dateBySession = new Map<number, string>();
   (sessions ?? []).forEach((s: any) => dateBySession.set(s.id, s.session_date));
 
-  // 3) marks for this student
   const { data: marks, error: marksErr } = sessionIds.length
     ? await sb
         .from("attendance_marks")
@@ -114,7 +134,7 @@ export default async function StudentAttendancePage({
   const rows = (marks ?? [])
     .map((m: any) => ({
       date: dateBySession.get(m.session_id) ?? "",
-      status: m.status as Status,
+      status: String(m.status ?? "").toLowerCase().trim() as Status,
     }))
     .filter((r) => r.date);
 
@@ -124,9 +144,11 @@ export default async function StudentAttendancePage({
   const present = rows.filter((r) => r.status === "present").length;
   const absent = rows.filter((r) => r.status === "absent").length;
   const late = rows.filter((r) => r.status === "late").length;
-  const excused = rows.filter((r) => r.status === "excused").length;
-
+  const sick = rows.filter((r) => r.status === "sick").length;
   const rate = total > 0 ? Math.round((present / total) * 100) : 0;
+
+  const termName =
+    terms?.find((t: any) => t.id === selectedTermId)?.name ?? `Term ${selectedTermId}`;
 
   return (
     <div className="grid gap-6">
@@ -135,13 +157,16 @@ export default async function StudentAttendancePage({
           <div>
             <h1 className="portal-title">Attendance</h1>
             <p className="portal-subtitle">
-              Term: <span className="font-medium">{terms?.find((t: any) => t.id === selectedTermId)?.name ?? selectedTermId}</span>
+              Term: <span className="font-medium">{termName}</span>
               {" • "}
               Class: <span className="font-medium">{cg?.name ?? enrollment.class_id}</span>
             </p>
           </div>
 
           <div className="flex flex-wrap gap-2">
+            <Link className="portal-btn" href="/portal/student/dashboard">
+              Dashboard
+            </Link>
             <a className="portal-btn" href={`/portal/student/attendance/export?termId=${selectedTermId}`}>
               Download CSV
             </a>
@@ -166,28 +191,27 @@ export default async function StudentAttendancePage({
         </form>
       </section>
 
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="portal-surface p-4">
-          <div className="text-xs font-semibold tracking-widest portal-muted">RATE</div>
-          <div className="mt-2 text-2xl font-bold">{rate}%</div>
-        </div>
-        <div className="portal-surface p-4">
-          <div className="text-xs font-semibold tracking-widest portal-muted">PRESENT</div>
-          <div className="mt-2 text-2xl font-bold">{present}</div>
-        </div>
-        <div className="portal-surface p-4">
-          <div className="text-xs font-semibold tracking-widest portal-muted">ABSENT</div>
-          <div className="mt-2 text-2xl font-bold">{absent}</div>
-        </div>
-        <div className="portal-surface p-4">
-          <div className="text-xs font-semibold tracking-widest portal-muted">TOTAL</div>
-          <div className="mt-2 text-2xl font-bold">{total}</div>
-        </div>
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <StatCard label="Attendance rate" value={`${rate}%`} />
+        <StatCard label="Present" value={present} />
+        <StatCard label="Absent" value={absent} />
+        <StatCard label="Late" value={late} />
+        <StatCard label="Sick" value={sick} />
       </section>
 
       <section className="portal-surface p-5">
-        <h2 className="text-lg font-semibold">History</h2>
-        <p className="mt-1 text-sm portal-muted">Your attendance marks recorded by teachers.</p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold">Attendance history</h2>
+            <p className="mt-1 text-sm portal-muted">
+              Your attendance marks recorded by teachers for this term.
+            </p>
+          </div>
+
+          <span className="portal-badge">
+            {total} record{total === 1 ? "" : "s"}
+          </span>
+        </div>
 
         {rows.length === 0 ? (
           <div className="mt-4 text-sm portal-muted">No attendance marks yet.</div>
@@ -198,7 +222,12 @@ export default async function StudentAttendancePage({
                 key={idx}
                 className="rounded-xl border bg-white/70 p-3 flex flex-wrap items-center justify-between gap-2"
               >
-                <div className="text-sm font-medium text-[color:var(--ohs-charcoal)]">{r.date}</div>
+                <div>
+                  <div className="text-sm font-medium text-[color:var(--ohs-charcoal)]">
+                    {r.date}
+                  </div>
+                  <div className="text-xs text-slate-500">Recorded attendance entry</div>
+                </div>
                 <Badge text={r.status} />
               </div>
             ))}

@@ -20,15 +20,16 @@ export async function listClasses(opts?: { includeInactive?: boolean; q?: string
 
   let query = sb
     .from("class_groups")
-    .select("id, name, level, track_key, is_active, updated_at")
+    .select("id, name, level, stream, track_key, is_active, updated_at")
+    .order("level", { ascending: true })
+    .order("stream", { ascending: true, nullsFirst: false })
     .order("name", { ascending: true });
 
   if (!opts?.includeInactive) query = query.eq("is_active", true);
 
   const q = (opts?.q ?? "").trim();
   if (q) {
-    // Search by name or level
-    query = query.or(`name.ilike.%${q}%,level.ilike.%${q}%`);
+    query = query.or(`name.ilike.%${q}%,level.ilike.%${q}%,stream.ilike.%${q}%`);
   }
 
   const { data, error } = await query;
@@ -49,7 +50,6 @@ export async function listSubjects(opts?: { includeInactive?: boolean; q?: strin
 
   const q = (opts?.q ?? "").trim();
   if (q) {
-    // Search by name or code
     query = query.or(`name.ilike.%${q}%,code.ilike.%${q}%`);
   }
 
@@ -108,7 +108,7 @@ export async function listAssignments() {
       subject_id,
       teacher_id,
       academic_terms:term_id ( id, name ),
-      class_groups:class_id ( id, name, track_key ),
+      class_groups:class_id ( id, name, level, stream, track_key ),
       subjects:subject_id ( id, name, code, track ),
       teachers:teacher_id ( id, full_name )
     `)

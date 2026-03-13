@@ -108,8 +108,9 @@ export async function upsertClass(formData: FormData): Promise<void> {
 
   const Schema = z.object({
     id: z.string().optional(),
-    name: z.string().min(2).max(40),
-    level: z.string().min(1).max(10),
+    name: z.string().min(2).max(80),
+    level: z.string().min(1).max(20),
+    stream: z.string().max(20).optional().nullable(),
     track_key: z.enum(["secular", "islamic"]).default("secular"),
     is_active: z.coerce.boolean().default(true),
   });
@@ -118,6 +119,7 @@ export async function upsertClass(formData: FormData): Promise<void> {
     id: formData.get("id") ? String(formData.get("id")) : undefined,
     name: String(formData.get("name") ?? ""),
     level: String(formData.get("level") ?? ""),
+    stream: formData.get("stream") ? String(formData.get("stream")) : null,
     track_key: String(formData.get("track_key") ?? "secular"),
     is_active: formData.get("is_active") ? true : false,
   });
@@ -127,6 +129,7 @@ export async function upsertClass(formData: FormData): Promise<void> {
   const payload = {
     name: parsed.data.name,
     level: parsed.data.level,
+    stream: parsed.data.stream || null,
     track_key: parsed.data.track_key,
     is_active: parsed.data.is_active,
   };
@@ -209,7 +212,6 @@ export async function upsertSubject(formData: FormData): Promise<void> {
     is_active: parsed.data.is_active,
   };
 
-  // ✅ UPDATE by id when editing
   if (parsed.data.id) {
     const { error } = await sb().from("subjects").update(payload).eq("id", Number(parsed.data.id));
     if (error) redirect(`/portal/admin/academics?tab=subjects&err=${encodeURIComponent(error.message)}`);
@@ -218,8 +220,6 @@ export async function upsertSubject(formData: FormData): Promise<void> {
     redirect("/portal/admin/academics?tab=subjects&ok=1");
   }
 
-  // ✅ NEW subject:
-  // If code exists already (even inactive), revive + update instead of insert
   if (payload.code) {
     const { data: existing, error: findErr } = await sb()
       .from("subjects")
@@ -238,7 +238,6 @@ export async function upsertSubject(formData: FormData): Promise<void> {
     }
   }
 
-  // ✅ Otherwise insert fresh
   const { error } = await sb().from("subjects").insert(payload);
   if (error) redirect(`/portal/admin/academics?tab=subjects&err=${encodeURIComponent(error.message)}`);
 

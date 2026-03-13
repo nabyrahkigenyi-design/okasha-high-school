@@ -32,6 +32,19 @@ function dayLabel(day: string | null | undefined) {
   return String(day ?? "");
 }
 
+function daysUntil(dateString: string | null | undefined) {
+  if (!dateString) return null;
+
+  const today = new Date();
+  const end = new Date(dateString);
+
+  today.setHours(0, 0, 0, 0);
+  end.setHours(0, 0, 0, 0);
+
+  const diffMs = end.getTime() - today.getTime();
+  return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+}
+
 export async function getTeacherCount() {
   await requireRole(["admin"]);
   const sb = supabaseAdmin();
@@ -70,6 +83,39 @@ export async function getParentCount() {
   return count ?? 0;
 }
 
+export async function getStaffCount() {
+  await requireRole(["admin"]);
+  const sb = supabaseAdmin();
+
+  const { data, error } = await sb
+    .from("profiles")
+    .select("id, role_key, is_active")
+    .eq("is_active", true)
+    .in("role_key", ["admin", "teacher"]);
+
+  if (error) throw new Error(error.message);
+  return (data ?? []).length;
+}
+
+export async function getStudentStatusSummary() {
+  await requireRole(["admin"]);
+  const sb = supabaseAdmin();
+
+  const [activeRes, suspendedRes, withdrawnRes, graduatedRes] = await Promise.all([
+    sb.from("students").select("id", { count: "exact", head: true }).eq("status", "active"),
+    sb.from("students").select("id", { count: "exact", head: true }).eq("status", "suspended"),
+    sb.from("students").select("id", { count: "exact", head: true }).eq("status", "withdrawn"),
+    sb.from("students").select("id", { count: "exact", head: true }).eq("status", "graduated"),
+  ]);
+
+  return {
+    active: activeRes.count ?? 0,
+    suspended: suspendedRes.count ?? 0,
+    withdrawn: withdrawnRes.count ?? 0,
+    graduated: graduatedRes.count ?? 0,
+  };
+}
+
 export async function getActiveTerm() {
   await requireRole(["admin"]);
   const sb = supabaseAdmin();
@@ -83,7 +129,13 @@ export async function getActiveTerm() {
     .maybeSingle();
 
   if (error) throw new Error(error.message);
-  return data ?? null;
+
+  if (!data) return null;
+
+  return {
+    ...data,
+    days_until_end: daysUntil(data.ends_on),
+  };
 }
 
 export async function getActiveClassCount() {
@@ -291,6 +343,68 @@ export async function listWeeklyTimetableForTerm(termId: number) {
   return rows;
 }
 
+export async function getFinanceSummaryForTerm(termId?: number | null) {
+  await requireRole(["admin"]);
+  const sb = supabaseAdmin();
+
+  if (!termId) {
+    return {
+      expected: 0,
+      paid: 0,
+      balance: 0,
+      expenses: 0,
+      net: 0,
+      collectionPercentage: 0,
+    };
+  }
+
+  const [expectedRows, payments, expenses] = await Promise.all([
+    sb
+      .from("student_fee_expected_view")
+      .select("student_id, expected_amount")
+      .eq("term_id", termId),
+    sb
+      .from("student_fee_payments")
+      .select("amount_paid")
+      .eq("term_id", termId),
+    sb
+      .from("school_expenses")
+      .select("amount")
+      .eq("term_id", termId),
+  ]);
+
+  if (expectedRows.error) throw new Error(expectedRows.error.message);
+  if (payments.error) throw new Error(payments.error.message);
+  if (expenses.error) throw new Error(expenses.error.message);
+
+  const expected = (expectedRows.data ?? []).reduce(
+    (sum: number, row: any) => sum + Number(row.expected_amount ?? 0),
+    0
+  );
+
+  const paid = (payments.data ?? []).reduce(
+    (sum: number, row: any) => sum + Number(row.amount_paid ?? 0),
+    0
+  );
+
+  const expenseTotal = (expenses.data ?? []).reduce(
+    (sum: number, row: any) => sum + Number(row.amount ?? 0),
+    0
+  );
+
+  const balance = expected - paid;
+  const collectionPercentage = expected > 0 ? Math.round((paid / expected) * 100) : 0;
+
+  return {
+    expected,
+    paid,
+    balance,
+    expenses: expenseTotal,
+    net: paid - expenseTotal,
+    collectionPercentage,
+  };
+}
+
 export async function getSchoolDashboardSnapshot() {
   await requireRole(["admin"]);
 
@@ -301,20 +415,26 @@ export async function getSchoolDashboardSnapshot() {
     teacherCount,
     studentCount,
     parentCount,
+    staffCount,
+    studentStatusSummary,
     classCount,
     announcements,
     attendanceSummary,
     enrollmentByClass,
     weeklyTimetable,
+    financeSummary,
   ] = await Promise.all([
     getTeacherCount(),
     getStudentCount(),
     getParentCount(),
+    getStaffCount(),
+    getStudentStatusSummary(),
     getActiveClassCount(),
     listRecentAnnouncements(6),
     getAttendanceSummaryForDate(today, activeTerm?.id ?? null),
     activeTerm ? getEnrollmentByClass(activeTerm.id) : Promise.resolve([]),
     activeTerm ? listWeeklyTimetableForTerm(activeTerm.id) : Promise.resolve([]),
+    getFinanceSummaryForTerm(activeTerm?.id ?? null),
   ]);
 
   return {
@@ -323,10 +443,13 @@ export async function getSchoolDashboardSnapshot() {
     teacherCount,
     studentCount,
     parentCount,
+    staffCount,
+    studentStatusSummary,
     classCount,
     attendanceSummary,
     announcements,
     enrollmentByClass,
     weeklyTimetable,
+    financeSummary,
   };
 }

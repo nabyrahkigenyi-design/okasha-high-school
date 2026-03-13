@@ -127,7 +127,6 @@ export default async function AdminAcademicsPage({
     ok?: string;
     err?: string;
     showInactive?: string;
-
     q?: string;
     qStudent?: string;
     qClass?: string;
@@ -212,7 +211,6 @@ export default async function AdminAcademicsPage({
   const baseTabHref = (k: string) => `/portal/admin/academics?tab=${k}${showInactive ? "&showInactive=1" : ""}`;
   const tabClass = (k: string) => `portal-tab ${tab === k ? "portal-tab-active" : ""}`;
 
-  // Choose toast text based on current tab. (Actions still set ok=1/err=...)
   const okText =
     tab === "terms"
       ? "Saved."
@@ -228,11 +226,9 @@ export default async function AdminAcademicsPage({
 
   return (
     <WatermarkedSection tone="portal" variant="mixed">
-      {/* Toasts (reads ok/err from URL then cleans it) */}
       <ToastGate ok={params.ok} err={params.err} okText={okText} />
 
       <div className="grid gap-6">
-        {/* Tabs */}
         <div className="portal-tabs sticky top-2 z-10">
           <Link className={tabClass("terms")} href="/portal/admin/academics?tab=terms">
             Terms
@@ -251,7 +247,6 @@ export default async function AdminAcademicsPage({
           </Link>
         </div>
 
-        {/* TERMS */}
         {tab === "terms" ? (
           <div className="grid gap-6 lg:grid-cols-2">
             <section className="portal-surface p-5">
@@ -323,7 +318,7 @@ export default async function AdminAcademicsPage({
 
               <div className="mt-3 divide-y rounded-xl border bg-white/70">
                 {terms.map((t: any) => (
-                  <div key={t.id} className="py-3 px-3 flex items-start justify-between gap-4">
+                  <div key={t.id} className="flex items-start justify-between gap-4 px-3 py-3">
                     <div>
                       <div className="font-medium">
                         {t.name} {t.is_active ? <span className="text-xs text-green-700">• active</span> : null}
@@ -361,13 +356,12 @@ export default async function AdminAcademicsPage({
                   </div>
                 ))}
 
-                {terms.length === 0 ? <div className="py-6 px-3 text-sm portal-muted">No terms yet.</div> : null}
+                {terms.length === 0 ? <div className="px-3 py-6 text-sm portal-muted">No terms yet.</div> : null}
               </div>
             </section>
           </div>
         ) : null}
 
-        {/* CLASSES */}
         {tab === "classes" ? (
           <div className="grid gap-6 lg:grid-cols-2">
             <section className="portal-surface p-5">
@@ -390,19 +384,29 @@ export default async function AdminAcademicsPage({
                 </div>
               ) : null}
 
-              <SearchBar tab="classes" showInactive={showInactive} q={q} placeholder="Search classes (e.g. S1A, S2, ...)" />
+              <SearchBar tab="classes" showInactive={showInactive} q={q} placeholder="Search classes (e.g. S1A, S2, A, B ...)" />
 
               <form action={upsertClass} className="mt-4 grid gap-3">
                 <input type="hidden" name="id" value={selectedId ?? ""} />
 
                 <label className="grid gap-1">
                   <span className="text-sm">Name</span>
-                  <input className="portal-input" name="name" required placeholder="S1A" defaultValue={selectedClass?.name ?? ""} />
+                  <input className="portal-input" name="name" required placeholder="Senior 1 A" defaultValue={selectedClass?.name ?? ""} />
                 </label>
 
                 <label className="grid gap-1">
                   <span className="text-sm">Level</span>
                   <input className="portal-input" name="level" required placeholder="S1" defaultValue={selectedClass?.level ?? ""} />
+                </label>
+
+                <label className="grid gap-1">
+                  <span className="text-sm">Stream</span>
+                  <input
+                    className="portal-input"
+                    name="stream"
+                    placeholder="A, B, East..."
+                    defaultValue={selectedClass?.stream ?? ""}
+                  />
                 </label>
 
                 <label className="grid gap-1">
@@ -439,16 +443,20 @@ export default async function AdminAcademicsPage({
                 { title: "Islamic Theology", items: islamicClasses, track: "islamic" as const },
               ].map((group) => (
                 <div key={group.title} className="mt-5">
-                  <div className="text-sm font-semibold flex items-center gap-2">
+                  <div className="flex items-center gap-2 text-sm font-semibold">
                     {group.title} <BadgeTrack track={group.track} />
                   </div>
 
                   <div className="mt-2 divide-y rounded-xl border bg-white/70">
                     {group.items.map((c: any) => (
-                      <div key={c.id} className="py-3 px-3 flex items-center justify-between gap-4">
+                      <div key={c.id} className="flex items-center justify-between gap-4 px-3 py-3">
                         <div>
                           <div className="font-medium">{c.name}</div>
-                          <div className="text-xs text-slate-500">{c.level} {c.is_active ? "" : "• inactive"}</div>
+                          <div className="text-xs text-slate-500">
+                            {c.level}
+                            {c.stream ? ` • Stream ${c.stream}` : ""}
+                            {c.is_active ? "" : " • inactive"}
+                          </div>
                         </div>
 
                         <div className="flex items-center gap-2">
@@ -480,7 +488,7 @@ export default async function AdminAcademicsPage({
                       </div>
                     ))}
 
-                    {group.items.length === 0 ? <div className="py-4 px-3 text-sm portal-muted">None.</div> : null}
+                    {group.items.length === 0 ? <div className="px-3 py-4 text-sm portal-muted">None.</div> : null}
                   </div>
                 </div>
               ))}
@@ -490,8 +498,14 @@ export default async function AdminAcademicsPage({
                   <div className="text-sm font-semibold">Inactive</div>
                   <div className="mt-2 divide-y rounded-xl border bg-white/70">
                     {inactiveClasses.map((c: any) => (
-                      <div key={c.id} className="py-3 px-3 flex items-center justify-between">
-                        <div className="font-medium">{c.name}</div>
+                      <div key={c.id} className="flex items-center justify-between px-3 py-3">
+                        <div>
+                          <div className="font-medium">{c.name}</div>
+                          <div className="text-xs text-slate-500">
+                            {c.level}
+                            {c.stream ? ` • Stream ${c.stream}` : ""}
+                          </div>
+                        </div>
                         <div className="flex items-center gap-2">
                           <Link
                             className="text-sm underline"
@@ -514,7 +528,6 @@ export default async function AdminAcademicsPage({
           </div>
         ) : null}
 
-        {/* SUBJECTS */}
         {tab === "subjects" ? (
           <div className="grid gap-6 lg:grid-cols-2">
             <section className="portal-surface p-5">
@@ -586,13 +599,13 @@ export default async function AdminAcademicsPage({
                 { title: "Islamic Theology", items: islamicSubjects, track: "islamic" as const },
               ].map((group) => (
                 <div key={group.title} className="mt-5">
-                  <div className="text-sm font-semibold flex items-center gap-2">
+                  <div className="flex items-center gap-2 text-sm font-semibold">
                     {group.title} <BadgeTrack track={group.track} />
                   </div>
 
                   <div className="mt-2 divide-y rounded-xl border bg-white/70">
                     {group.items.map((s: any) => (
-                      <div key={s.id} className="py-3 px-3 flex items-center justify-between gap-4">
+                      <div key={s.id} className="flex items-center justify-between gap-4 px-3 py-3">
                         <div>
                           <div className="font-medium">{s.name}</div>
                           <div className="text-xs text-slate-500">{s.code ? s.code : ""} {s.is_active ? "" : "• inactive"}</div>
@@ -627,7 +640,7 @@ export default async function AdminAcademicsPage({
                       </div>
                     ))}
 
-                    {group.items.length === 0 ? <div className="py-4 px-3 text-sm portal-muted">None.</div> : null}
+                    {group.items.length === 0 ? <div className="px-3 py-4 text-sm portal-muted">None.</div> : null}
                   </div>
                 </div>
               ))}
@@ -637,7 +650,7 @@ export default async function AdminAcademicsPage({
                   <div className="text-sm font-semibold">Inactive</div>
                   <div className="mt-2 divide-y rounded-xl border bg-white/70">
                     {inactiveSubjects.map((s: any) => (
-                      <div key={s.id} className="py-3 px-3 flex items-center justify-between">
+                      <div key={s.id} className="flex items-center justify-between px-3 py-3">
                         <div className="font-medium">{s.name}</div>
                         <div className="flex items-center gap-2">
                           <Link
@@ -661,7 +674,6 @@ export default async function AdminAcademicsPage({
           </div>
         ) : null}
 
-        {/* ASSIGNMENTS */}
         {tab === "assignments" ? (
           <div className="grid gap-6 lg:grid-cols-2">
             <section className="portal-surface p-5">
@@ -730,14 +742,14 @@ export default async function AdminAcademicsPage({
 
               <div className="mt-4">
                 <div className="flex items-center justify-between">
-                  <div className="text-sm font-semibold flex items-center gap-2">
+                  <div className="flex items-center gap-2 text-sm font-semibold">
                     Secular <BadgeTrack track="secular" />
                   </div>
                   <Pill>{secularAssignments.length}</Pill>
                 </div>
                 <div className="mt-2 divide-y rounded-xl border bg-white/70">
                   {secularAssignments.map((a: any) => (
-                    <div key={a.id} className="py-3 px-3 flex items-start justify-between gap-4">
+                    <div key={a.id} className="flex items-start justify-between gap-4 px-3 py-3">
                       <div>
                         <div className="font-medium">{a.class_groups?.name} • {a.subjects?.name}</div>
                         <div className="text-xs text-slate-500">{a.academic_terms?.name} • {a.teachers?.full_name}</div>
@@ -753,20 +765,20 @@ export default async function AdminAcademicsPage({
                       </form>
                     </div>
                   ))}
-                  {secularAssignments.length === 0 ? <div className="py-4 px-3 text-sm portal-muted">None.</div> : null}
+                  {secularAssignments.length === 0 ? <div className="px-3 py-4 text-sm portal-muted">None.</div> : null}
                 </div>
               </div>
 
               <div className="mt-6">
                 <div className="flex items-center justify-between">
-                  <div className="text-sm font-semibold flex items-center gap-2">
+                  <div className="flex items-center gap-2 text-sm font-semibold">
                     Islamic Theology <BadgeTrack track="islamic" />
                   </div>
                   <Pill>{islamicAssignments.length}</Pill>
                 </div>
                 <div className="mt-2 divide-y rounded-xl border bg-white/70">
                   {islamicAssignments.map((a: any) => (
-                    <div key={a.id} className="py-3 px-3 flex items-start justify-between gap-4">
+                    <div key={a.id} className="flex items-start justify-between gap-4 px-3 py-3">
                       <div>
                         <div className="font-medium">{a.class_groups?.name} • {a.subjects?.name}</div>
                         <div className="text-xs text-slate-500">{a.academic_terms?.name} • {a.teachers?.full_name}</div>
@@ -782,14 +794,13 @@ export default async function AdminAcademicsPage({
                       </form>
                     </div>
                   ))}
-                  {islamicAssignments.length === 0 ? <div className="py-4 px-3 text-sm portal-muted">None.</div> : null}
+                  {islamicAssignments.length === 0 ? <div className="px-3 py-4 text-sm portal-muted">None.</div> : null}
                 </div>
               </div>
             </section>
           </div>
         ) : null}
 
-        {/* ENROLLMENTS */}
         {tab === "enrollments" ? (
           <div className="grid gap-6 lg:grid-cols-2">
             <section className="portal-surface p-5">
@@ -889,7 +900,7 @@ export default async function AdminAcademicsPage({
 
                   <div className="mt-3 divide-y rounded-xl border bg-white/70">
                     {enrollments.map((e: any) => (
-                      <div key={e.id} className="py-3 px-3 flex items-center justify-between gap-4">
+                      <div key={e.id} className="flex items-center justify-between gap-4 px-3 py-3">
                         <div className="font-medium">{e.students?.full_name}</div>
                         <form action={deleteEnrollment}>
                           <input type="hidden" name="id" value={e.id} />
@@ -906,7 +917,7 @@ export default async function AdminAcademicsPage({
                     ))}
 
                     {enrollments.length === 0 ? (
-                      <div className="py-6 px-3 text-sm portal-muted">No students in this class yet.</div>
+                      <div className="px-3 py-6 text-sm portal-muted">No students in this class yet.</div>
                     ) : null}
                   </div>
 
@@ -927,7 +938,7 @@ export default async function AdminAcademicsPage({
                   ].map((group) => (
                     <div key={group.title}>
                       <div className="flex items-center justify-between">
-                        <div className="text-sm font-semibold flex items-center gap-2">
+                        <div className="flex items-center gap-2 text-sm font-semibold">
                           {group.title} <BadgeTrack track={group.track} />
                         </div>
                         <Pill>{group.items.length}</Pill>
@@ -939,7 +950,10 @@ export default async function AdminAcademicsPage({
                             <div className="flex items-center justify-between gap-3">
                               <div>
                                 <div className="font-medium">{x.class.name}</div>
-                                <div className="text-xs text-slate-500">{x.count} enrolled</div>
+                                <div className="text-xs text-slate-500">
+                                  {x.count} enrolled
+                                  {x.class.stream ? ` • Stream ${x.class.stream}` : ""}
+                                </div>
                               </div>
 
                               <Link
