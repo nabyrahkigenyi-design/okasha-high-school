@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { requireRole } from "@/lib/rbac";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { getActiveTerm, getTeacherOrThrow } from "../queries";
 
 type Rel<T> = T | T[] | null | undefined;
 
@@ -127,18 +127,11 @@ function ActionTile({
 }
 
 export default async function TeacherDashboard() {
-  const me = await requireRole(["teacher"]);
+  const teacher = await getTeacherOrThrow();
   const sb = supabaseAdmin();
 
-  const { data: terms, error: termErr } = await sb
-    .from("academic_terms")
-    .select("id, name, is_active")
-    .order("id", { ascending: false })
-    .limit(20);
-
-  if (termErr) throw new Error(termErr.message);
-
-  const activeTerm = terms?.find((t: any) => t.is_active) ?? terms?.[0] ?? null;
+  const activeTerm = await getActiveTerm();
+  const today = todayDayKey();
 
   const { data: assignments, error: assignErr } =
     activeTerm?.id
@@ -149,17 +142,15 @@ export default async function TeacherDashboard() {
             class_id,
             subject_id,
             term_id,
-            class_groups:class_id ( id, name, level, track_key ),
-            subjects:subject_id ( id, name, code, track )
+            class_groups:class_id ( id, name, level, school_level, stream, track_key ),
+            subjects:subject_id ( id, name, code, track, school_level, subject_category )
           `)
-          .eq("teacher_id", me.id)
+          .eq("teacher_id", teacher.id)
           .eq("term_id", activeTerm.id)
           .order("id", { ascending: true })
       : { data: [] as any[], error: null as any };
 
   if (assignErr) throw new Error(assignErr.message);
-
-  const today = todayDayKey();
 
   const { data: lessons, error: ttErr } =
     activeTerm?.id
@@ -173,11 +164,11 @@ export default async function TeacherDashboard() {
             end_time,
             room,
             note,
-            class_groups:class_id ( id, name, level ),
-            subjects:subject_id ( id, name, code )
+            class_groups:class_id ( id, name, level, school_level, stream, track_key ),
+            subjects:subject_id ( id, name, code, track, school_level )
           `)
           .eq("term_id", activeTerm.id)
-          .eq("teacher_id", me.id)
+          .eq("teacher_id", teacher.id)
           .eq("day_of_week", today)
           .order("period_no", { ascending: true })
       : { data: [] as any[], error: null as any };
@@ -194,7 +185,7 @@ export default async function TeacherDashboard() {
           <div className="min-w-0">
             <h1 className="portal-title">Teacher Dashboard</h1>
             <p className="portal-subtitle">
-              Welcome, <span className="font-medium text-slate-900">{me.full_name}</span>
+              Welcome, <span className="font-medium text-slate-900">{teacher.full_name}</span>
               {activeTerm ? (
                 <>
                   {" "}
@@ -222,7 +213,11 @@ export default async function TeacherDashboard() {
         <StatCard label="Assigned Classes" value={classesCount} hint="Current active teaching scopes" />
         <StatCard label="Today's Lessons" value={todaysLessons} hint={dayLabel(today)} />
         <StatCard label="Active Term" value={activeTerm?.name ?? "—"} hint="School teaching period" />
-        <StatCard label="Priority" value={todaysLessons > 0 ? "Teaching Day" : "No Lessons"} hint="Based on today’s timetable" />
+        <StatCard
+          label="Priority"
+          value={todaysLessons > 0 ? "Teaching Day" : "No Lessons"}
+          hint="Based on today’s timetable"
+        />
       </div>
 
       <SectionCard

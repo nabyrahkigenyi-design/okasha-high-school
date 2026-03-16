@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireRole } from "@/lib/rbac";
 import { WatermarkedSection } from "@/components/WatermarkedSection";
 import { ToastGate } from "@/components/ToastGate";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 import { createStudentProfile } from "./actions";
 import StudentPhotoField from "../StudentPhotoField";
 
@@ -32,6 +33,30 @@ export default async function AdminNewStudentPage({
 }) {
   await requireRole(["admin"]);
   const sp = await searchParams;
+  const sb = supabaseAdmin();
+
+  const [{ data: terms, error: termsError }, { data: classes, error: classesError }] =
+    await Promise.all([
+      sb
+        .from("academic_terms")
+        .select("id, name, is_active")
+        .order("id", { ascending: false })
+        .limit(100),
+      sb
+        .from("class_groups")
+        .select("id, name, level, stream, track_key, is_active")
+        .eq("is_active", true)
+        .order("level", { ascending: true })
+        .order("stream", { ascending: true, nullsFirst: false })
+        .order("name", { ascending: true })
+        .limit(300),
+    ]);
+
+  if (termsError) throw new Error(termsError.message);
+  if (classesError) throw new Error(classesError.message);
+
+  const activeTermId = terms?.find((t: any) => t.is_active)?.id ?? terms?.[0]?.id ?? "";
+  const defaultClassId = classes?.[0]?.id ?? "";
 
   return (
     <WatermarkedSection tone="portal" variant="mixed">
@@ -41,14 +66,14 @@ export default async function AdminNewStudentPage({
         <section className="portal-surface p-6">
           <SectionTitle
             title="Register Student"
-            subtitle="Create a permanent student record and assign an official student ID."
+            subtitle="Create a permanent student record, assign a student ID, and enroll the student into a real class."
             right={
               <>
                 <Link className="portal-btn" href="/portal/admin/students">
                   Back to Students
                 </Link>
-                <Link className="portal-btn" href="/portal/admin/users">
-                  Users
+                <Link className="portal-btn" href="/portal/admin/academics?tab=enrollments">
+                  Enrollments
                 </Link>
               </>
             }
@@ -133,35 +158,32 @@ export default async function AdminNewStudentPage({
             </div>
 
             <div className="grid gap-4">
-              <h2 className="text-lg font-semibold text-slate-900">School placement</h2>
+              <h2 className="text-lg font-semibold text-slate-900">Academic placement</h2>
 
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <div className="grid gap-4 md:grid-cols-2">
                 <label className="grid gap-1">
-                  <span className="text-sm">School level</span>
-                  <select className="portal-select" name="school_level" defaultValue="o-level" required>
-                    <option value="primary">Primary</option>
-                    <option value="o-level">O-Level</option>
-                    <option value="a-level">A-Level</option>
+                  <span className="text-sm">Term</span>
+                  <select className="portal-select" name="term_id" defaultValue={String(activeTermId)} required>
+                    {(terms ?? []).map((t: any) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name} {t.is_active ? "(active)" : ""}
+                      </option>
+                    ))}
                   </select>
                 </label>
 
                 <label className="grid gap-1">
-                  <span className="text-sm">Track</span>
-                  <select className="portal-select" name="track" defaultValue="">
-                    <option value="">Select</option>
-                    <option value="secular">Secular</option>
-                    <option value="islamic">Islamic</option>
+                  <span className="text-sm">Class</span>
+                  <select className="portal-select" name="class_id" defaultValue={String(defaultClassId)} required>
+                    {(classes ?? []).map((c: any) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                        {c.level ? ` • ${c.level}` : ""}
+                        {c.stream ? ` • Stream ${c.stream}` : ""}
+                        {c.track_key === "islamic" ? " • Islamic" : " • Secular"}
+                      </option>
+                    ))}
                   </select>
-                </label>
-
-                <label className="grid gap-1">
-                  <span className="text-sm">Class level</span>
-                  <input className="portal-input" name="class_level" placeholder="P5, S1, S5..." />
-                </label>
-
-                <label className="grid gap-1">
-                  <span className="text-sm">Stream</span>
-                  <input className="portal-input" name="stream" placeholder="A, B..." />
                 </label>
               </div>
 
@@ -201,6 +223,11 @@ export default async function AdminNewStudentPage({
                   placeholder="Additional registration notes..."
                 />
               </label>
+
+              <div className="rounded-xl border bg-white/70 p-3 text-xs text-slate-600">
+                The selected class will be used to create the student’s real enrollment for the chosen term.
+                School level, track, class level, and stream will be derived from that class automatically.
+              </div>
             </div>
 
             <div className="grid gap-4">

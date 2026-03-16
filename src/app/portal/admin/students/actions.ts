@@ -12,6 +12,33 @@ function enc(s: string) {
   return encodeURIComponent(s);
 }
 
+function deriveSchoolLevelFromClassLevel(level: string | null | undefined) {
+  const value = String(level ?? "").trim().toUpperCase();
+
+  if (!value) return "o-level";
+  if (value.startsWith("P")) return "primary";
+  if (value === "S5" || value === "S6") return "a-level";
+  return "o-level";
+}
+
+async function resolveLinkedAuthUserIdForStudent(studentId: string, explicitUserId: string | null) {
+  if (explicitUserId) return explicitUserId;
+
+  const { data: matchingProfile, error } = await sb()
+    .from("profiles")
+    .select("id, role_key")
+    .eq("id", studentId)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+
+  if (matchingProfile?.id && matchingProfile.role_key === "student") {
+    return matchingProfile.id;
+  }
+
+  return null;
+}
+
 const StudentProfileSchema = z.object({
   id: z.string().uuid(),
   first_name: z.string().trim().max(80).optional().or(z.literal("")),
@@ -25,10 +52,6 @@ const StudentProfileSchema = z.object({
   nationality: z.string().trim().max(120).optional().or(z.literal("")),
   religion: z.string().trim().max(120).optional().or(z.literal("")),
   photo_url: z.string().trim().max(1000).optional().or(z.literal("")),
-  track: z.string().trim().max(40).optional().or(z.literal("")),
-  class_level: z.string().trim().max(40).optional().or(z.literal("")),
-  school_level: z.enum(["primary", "o-level", "a-level"]),
-  stream: z.string().trim().max(40).optional().or(z.literal("")),
   admission_year: z.coerce.number().int().min(2000).max(2100).optional(),
   graduation_year: z.coerce.number().int().min(2000).max(2100).optional().nullable(),
   admission_date: z.string().optional().or(z.literal("")),
@@ -38,6 +61,8 @@ const StudentProfileSchema = z.object({
   guardian_primary_id: z.string().uuid().optional().or(z.literal("")),
   guardian_secondary_id: z.string().uuid().optional().or(z.literal("")),
   is_active: z.coerce.boolean().default(true),
+  term_id: z.coerce.number().int().positive().optional(),
+  class_id: z.coerce.number().int().positive().optional(),
 });
 
 const CreatePortalLoginSchema = z.object({
@@ -127,10 +152,6 @@ export async function updateStudentProfile(formData: FormData) {
     nationality: String(formData.get("nationality") ?? "").trim(),
     religion: String(formData.get("religion") ?? "").trim(),
     photo_url: String(formData.get("photo_url") ?? "").trim(),
-    track: String(formData.get("track") ?? "").trim(),
-    class_level: String(formData.get("class_level") ?? "").trim(),
-    school_level: String(formData.get("school_level") ?? "").trim(),
-    stream: String(formData.get("stream") ?? "").trim(),
     admission_year: formData.get("admission_year")
       ? Number(formData.get("admission_year"))
       : new Date().getFullYear(),
@@ -144,6 +165,8 @@ export async function updateStudentProfile(formData: FormData) {
     guardian_primary_id: String(formData.get("guardian_primary_id") ?? "").trim(),
     guardian_secondary_id: String(formData.get("guardian_secondary_id") ?? "").trim(),
     is_active: formData.get("is_active") ? true : false,
+    term_id: formData.get("term_id") ? Number(formData.get("term_id")) : undefined,
+    class_id: formData.get("class_id") ? Number(formData.get("class_id")) : undefined,
   });
 
   const rawId = String(formData.get("id") ?? "").trim();
@@ -154,6 +177,51 @@ export async function updateStudentProfile(formData: FormData) {
   }
 
   const data = parsed.data;
+
+  let derivedSchoolLevel: "primary" | "o-level" | "a-level" | null = null;
+  let derivedTrack: string | null = null;
+  let derivedClassLevel: string | null = null;
+  let derivedStream: string | null = null;
+
+  if (data.term_id && data.class_id) {
+    const { data: selectedClass, error: classError } = await sb()
+      .from("class_groups")
+      .select("id, name, level, stream, track_key, is_active")
+      .eq("id", data.class_id)
+      .maybeSingle();
+
+    if (classError) {
+      redirect(`${back}?edit=1&err=${enc(classError.message)}`);
+    }
+
+    if (!selectedClass) {
+      redirect(`${back}?edit=1&err=${enc("Selected class not found.")}`);
+    }
+
+    if (!selectedClass.is_active) {
+      redirect(`${back}?edit=1&err=${enc("Selected class is inactive.")}`);
+    }
+
+    derivedSchoolLevel = deriveSchoolLevelFromClassLevel(selectedClass.level);
+    derivedTrack = selectedClass.track_key ?? null;
+    derivedClassLevel = selectedClass.level ?? null;
+    derivedStream = selectedClass.stream ?? null;
+  } else {
+    const { data: currentStudent, error: currentStudentError } = await sb()
+      .from("students")
+      .select("school_level, track, class_level, stream")
+      .eq("id", data.id)
+      .maybeSingle();
+
+    if (currentStudentError) {
+      redirect(`${back}?edit=1&err=${enc(currentStudentError.message)}`);
+    }
+
+    derivedSchoolLevel = (currentStudent?.school_level as "primary" | "o-level" | "a-level" | null) ?? "o-level";
+    derivedTrack = currentStudent?.track ?? null;
+    derivedClassLevel = currentStudent?.class_level ?? null;
+    derivedStream = currentStudent?.stream ?? null;
+  }
 
   const payload = {
     first_name: data.first_name || null,
@@ -167,10 +235,10 @@ export async function updateStudentProfile(formData: FormData) {
     nationality: data.nationality || null,
     religion: data.religion || null,
     photo_url: data.photo_url || null,
-    track: data.track || null,
-    class_level: data.class_level || null,
-    school_level: data.school_level,
-    stream: data.stream || null,
+    school_level: derivedSchoolLevel,
+    track: derivedTrack,
+    class_level: derivedClassLevel,
+    stream: derivedStream,
     admission_year: data.admission_year ?? new Date().getFullYear(),
     graduation_year: data.graduation_year ?? null,
     admission_date: data.admission_date || null,
@@ -204,8 +272,51 @@ export async function updateStudentProfile(formData: FormData) {
     redirect(`${back}?edit=1&err=${enc(profileError.message)}`);
   }
 
+  if (data.term_id && data.class_id) {
+    const { data: existingEnrollment, error: enrollmentCheckError } = await sb()
+      .from("enrollments")
+      .select("id")
+      .eq("student_id", data.id)
+      .eq("term_id", data.term_id)
+      .maybeSingle();
+
+    if (enrollmentCheckError) {
+      redirect(`${back}?edit=1&err=${enc(enrollmentCheckError.message)}`);
+    }
+
+    if (existingEnrollment?.id) {
+      const { error: enrollmentUpdateError } = await sb()
+        .from("enrollments")
+        .update({ class_id: data.class_id })
+        .eq("id", existingEnrollment.id);
+
+      if (enrollmentUpdateError) {
+        redirect(`${back}?edit=1&err=${enc(enrollmentUpdateError.message)}`);
+      }
+    } else {
+      const { error: enrollmentInsertError } = await sb().from("enrollments").insert({
+        student_id: data.id,
+        class_id: data.class_id,
+        term_id: data.term_id,
+      });
+
+      if (enrollmentInsertError) {
+        redirect(`${back}?edit=1&err=${enc(enrollmentInsertError.message)}`);
+      }
+    }
+  }
+
   revalidatePath("/portal/admin/students");
   revalidatePath(back);
+  revalidatePath("/portal/admin/academics");
+  revalidatePath("/portal/admin/academics?tab=enrollments");
+  revalidatePath("/portal/student/dashboard");
+  revalidatePath("/portal/student/attendance");
+  revalidatePath("/portal/student/grades");
+  revalidatePath("/portal/student/timetable");
+  revalidatePath("/portal/student/assignments");
+  revalidatePath("/portal/student/announcements");
+
   redirect(`${back}?ok=${enc("Student profile updated.")}`);
 }
 
@@ -383,79 +494,83 @@ export async function purgeStudent(formData: FormData) {
     redirect(`/portal/admin/students?err=${enc("Missing student id.")}`);
   }
 
-  const { data: student, error: studentFindError } = await sb()
-    .from("students")
-    .select("id, user_id, full_name")
-    .eq("id", id)
-    .maybeSingle();
+  try {
+    const { data: student, error: studentFindError } = await sb()
+      .from("students")
+      .select("id, user_id, full_name")
+      .eq("id", id)
+      .maybeSingle();
 
-  if (studentFindError) {
-    redirect(`/portal/admin/students?err=${enc(studentFindError.message)}`);
-  }
-
-  if (!student) {
-    redirect(`/portal/admin/students?err=${enc("Student not found.")}`);
-  }
-
-  const userId = student.user_id || null;
-
-  const [
-    parentLinksRes,
-    paymentRes,
-    adjustmentRes,
-    enrollmentRes,
-    attendanceMarksRes,
-    gradesRes,
-  ] = await Promise.all([
-    sb().from("parent_students").delete().eq("student_id", id),
-    sb().from("student_fee_payments").delete().eq("student_id", id),
-    sb().from("student_fee_adjustments").delete().eq("student_id", id),
-    sb().from("enrollments").delete().eq("student_id", id),
-    sb().from("attendance_marks").delete().eq("student_id", id),
-    sb().from("grades").delete().eq("student_id", id),
-  ]);
-
-  for (const result of [
-    parentLinksRes,
-    paymentRes,
-    adjustmentRes,
-    enrollmentRes,
-    attendanceMarksRes,
-    gradesRes,
-  ]) {
-    if (result.error) {
-      redirect(`/portal/admin/students/${id}?err=${enc(result.error.message)}`);
+    if (studentFindError) {
+      redirect(`/portal/admin/students?err=${enc(studentFindError.message)}`);
     }
-  }
 
-  const { error: studentDeleteError } = await sb()
-    .from("students")
-    .delete()
-    .eq("id", id);
+    if (!student) {
+      redirect(`/portal/admin/students?err=${enc("Student not found.")}`);
+    }
 
-  if (studentDeleteError) {
-    redirect(`/portal/admin/students/${id}?err=${enc(studentDeleteError.message)}`);
-  }
+    const resolvedUserId = await resolveLinkedAuthUserIdForStudent(student.id, student.user_id || null);
 
-  if (userId) {
-    const { error: profileDeleteError } = await sb()
-      .from("profiles")
+    const [
+      parentLinksRes,
+      paymentRes,
+      adjustmentRes,
+      enrollmentRes,
+      attendanceMarksRes,
+      gradesRes,
+    ] = await Promise.all([
+      sb().from("parent_students").delete().eq("student_id", id),
+      sb().from("student_fee_payments").delete().eq("student_id", id),
+      sb().from("student_fee_adjustments").delete().eq("student_id", id),
+      sb().from("enrollments").delete().eq("student_id", id),
+      sb().from("attendance_marks").delete().eq("student_id", id),
+      sb().from("grades").delete().eq("student_id", id),
+    ]);
+
+    for (const result of [
+      parentLinksRes,
+      paymentRes,
+      adjustmentRes,
+      enrollmentRes,
+      attendanceMarksRes,
+      gradesRes,
+    ]) {
+      if (result.error) {
+        redirect(`/portal/admin/students/${id}?err=${enc(result.error.message)}`);
+      }
+    }
+
+    const { error: studentDeleteError } = await sb()
+      .from("students")
       .delete()
-      .eq("id", userId);
+      .eq("id", id);
 
-    if (profileDeleteError) {
-      redirect(`/portal/admin/students?err=${enc(profileDeleteError.message)}`);
+    if (studentDeleteError) {
+      redirect(`/portal/admin/students/${id}?err=${enc(studentDeleteError.message)}`);
     }
 
-    const authDelete = await sb().auth.admin.deleteUser(userId);
-    if (authDelete.error) {
-      redirect(`/portal/admin/students?err=${enc(authDelete.error.message)}`);
+    if (resolvedUserId) {
+      const { error: profileDeleteError } = await sb()
+        .from("profiles")
+        .delete()
+        .eq("id", resolvedUserId);
+
+      if (profileDeleteError) {
+        redirect(`/portal/admin/students?err=${enc(profileDeleteError.message)}`);
+      }
+
+      const authDelete = await sb().auth.admin.deleteUser(resolvedUserId);
+      if (authDelete.error) {
+        redirect(`/portal/admin/students?err=${enc(authDelete.error.message)}`);
+      }
     }
+
+    revalidatePath("/portal/admin/students");
+    revalidatePath("/portal/admin/users");
+    revalidatePath("/portal/admin/finance");
+    revalidatePath("/portal/admin/academics");
+    redirect(`/portal/admin/students?ok=${enc("Student permanently deleted.")}`);
+  } catch (error: any) {
+    redirect(`/portal/admin/students?err=${enc(error?.message ?? "Failed to delete student.")}`);
   }
-
-  revalidatePath("/portal/admin/students");
-  revalidatePath("/portal/admin/users");
-  revalidatePath("/portal/admin/finance");
-  revalidatePath("/portal/admin/academics");
-  redirect(`/portal/admin/students?ok=${enc("Student permanently deleted.")}`);
 }

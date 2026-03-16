@@ -35,7 +35,9 @@ export async function getAssessmentMeta(params: { assignmentId: number; assessme
 
 export async function getGradeMapForScope(params: { assignmentId: number; assessment: string }) {
   const scope = await getTeacherAssignmentById(params.assignmentId);
-  if (!scope || !params.assessment.trim()) return new Map<string, { score: string; max_score: string }>();
+  if (!scope || !params.assessment.trim()) {
+    return new Map<string, { score: string; max_score: string }>();
+  }
 
   const sb = supabaseAdmin();
   const { data, error } = await sb

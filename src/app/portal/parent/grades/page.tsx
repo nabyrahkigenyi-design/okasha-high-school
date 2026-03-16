@@ -9,6 +9,26 @@ import {
 } from "@/app/portal/parent/queries";
 
 type Rel<T> = T | T[] | null | undefined;
+type GradeRow = {
+  id: number;
+  subject_id: number;
+  assessment: string | null;
+  score: number | null;
+  max_score: number | null;
+  updated_at: string | null;
+  subjects?: any;
+};
+
+const REPORT_COLUMNS = [
+  "Mid Term 1",
+  "End Term 1",
+  "Mid Term 2",
+  "End Term 2",
+  "Mid Term 3",
+  "End of Year",
+] as const;
+
+type ReportColumn = (typeof REPORT_COLUMNS)[number];
 
 function oneRel<T>(v: Rel<T>): T | null {
   if (!v) return null;
@@ -56,6 +76,63 @@ function SectionCard({
       <div className="mt-4">{children}</div>
     </section>
   );
+}
+
+function normalizeAssessmentLabel(value: string | null | undefined): ReportColumn | null {
+  const v = String(value ?? "").trim().toLowerCase();
+
+  if (!v) return null;
+
+  if (v === "mid term 1" || v === "midterm 1" || v === "mid-term 1" || v === "mid 1") {
+    return "Mid Term 1";
+  }
+
+  if (
+    v === "end term 1" ||
+    v === "endterm 1" ||
+    v === "end-term 1" ||
+    v === "end of term 1" ||
+    v === "term 1 final"
+  ) {
+    return "End Term 1";
+  }
+
+  if (v === "mid term 2" || v === "midterm 2" || v === "mid-term 2" || v === "mid 2") {
+    return "Mid Term 2";
+  }
+
+  if (
+    v === "end term 2" ||
+    v === "endterm 2" ||
+    v === "end-term 2" ||
+    v === "end of term 2" ||
+    v === "term 2 final"
+  ) {
+    return "End Term 2";
+  }
+
+  if (v === "mid term 3" || v === "midterm 3" || v === "mid-term 3" || v === "mid 3") {
+    return "Mid Term 3";
+  }
+
+  if (
+    v === "end of year" ||
+    v === "end year" ||
+    v === "final" ||
+    v === "final exam" ||
+    v === "end term 3" ||
+    v === "endterm 3" ||
+    v === "end-term 3"
+  ) {
+    return "End of Year";
+  }
+
+  return null;
+}
+
+function fmtScore(score: number | null, max: number | null) {
+  if (score == null && max == null) return "—";
+  return `${score ?? "—"} / ${max ?? "—"}`;
 }
 
 export default async function ParentGradesPage({
@@ -112,6 +189,63 @@ export default async function ParentGradesPage({
   const enrollment = await getEnrollmentOrNull(termId, studentId);
   const cg: any = one(enrollment?.class_groups);
 
+  if (!enrollment?.class_id) {
+    return (
+      <div className="grid gap-6">
+        <section className="portal-surface p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h1 className="portal-title">Grades</h1>
+              <p className="portal-subtitle">
+                Child: <span className="font-medium">{student.full_name}</span> • Term:{" "}
+                <span className="font-medium">
+                  {terms?.find((t: any) => t.id === termId)?.name ?? termId}
+                </span>{" "}
+                • Not enrolled for this term
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Link className="portal-btn" href={`/portal/parent/dashboard?studentId=${studentId}`}>
+                Dashboard
+              </Link>
+            </div>
+          </div>
+
+          <form method="get" className="mt-4 grid gap-3 md:grid-cols-[1fr_220px_auto]">
+            <label className="grid gap-1">
+              <span className="text-sm">Child</span>
+              <select className="portal-select" name="studentId" defaultValue={studentId}>
+                {children.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.full_name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="grid gap-1">
+              <span className="text-sm">Term</span>
+              <select className="portal-select" name="termId" defaultValue={String(termId)}>
+                {(terms ?? []).map((t: any) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name} {t.is_active ? "(active)" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="flex items-end">
+              <button className="portal-btn portal-btn-primary" type="submit">
+                Apply
+              </button>
+            </div>
+          </form>
+        </section>
+      </div>
+    );
+  }
+
   const { data: grades, error: gradeErr } = await sb
     .from("grades")
     .select(`
@@ -126,49 +260,103 @@ export default async function ParentGradesPage({
     .eq("student_id", studentId)
     .eq("term_id", termId)
     .order("updated_at", { ascending: false })
-    .limit(800);
+    .limit(1000);
 
   if (gradeErr) throw new Error(gradeErr.message);
 
-  const bySubject = new Map<
+  const { data: teacherAssignments, error: taErr } = await sb
+    .from("teacher_assignments")
+    .select(`
+      id,
+      subject_id,
+      teacher_id,
+      subjects:subject_id ( id, name, code, track ),
+      teachers:teacher_id ( id, full_name )
+    `)
+    .eq("term_id", termId)
+    .eq("class_id", enrollment.class_id)
+    .order("id", { ascending: true });
+
+  if (taErr) throw new Error(taErr.message);
+
+  const gradeRows = (grades ?? []) as GradeRow[];
+
+  const subjectMap = new Map<
     string,
     {
+      subjectId: number;
       subjectName: string;
       subjectCode: string | null;
-      items: any[];
+      teacherName: string | null;
+      track: string | null;
+      gradesByAssessment: Map<
+        ReportColumn,
+        { score: number | null; max: number | null; updatedAt: string | null }
+      >;
+      rawItems: GradeRow[];
     }
   >();
 
-  (grades ?? []).forEach((g: any) => {
+  for (const row of teacherAssignments ?? []) {
+    const subj = oneRel(row.subjects) as any;
+    const teacher = oneRel(row.teachers) as any;
+    const key = String(row.subject_id);
+
+    if (!subjectMap.has(key)) {
+      subjectMap.set(key, {
+        subjectId: Number(row.subject_id),
+        subjectName: subj?.name ?? "Subject",
+        subjectCode: subj?.code ?? null,
+        teacherName: teacher?.full_name ?? null,
+        track: subj?.track ?? null,
+        gradesByAssessment: new Map(),
+        rawItems: [],
+      });
+    } else {
+      const existing = subjectMap.get(key)!;
+      if (!existing.teacherName && teacher?.full_name) {
+        existing.teacherName = teacher.full_name;
+      }
+    }
+  }
+
+  for (const g of gradeRows) {
     const subj = oneRel(g.subjects) as any;
     const key = String(g.subject_id);
 
-    if (!bySubject.has(key)) {
-      bySubject.set(key, {
+    if (!subjectMap.has(key)) {
+      subjectMap.set(key, {
+        subjectId: Number(g.subject_id),
         subjectName: subj?.name ?? "Subject",
         subjectCode: subj?.code ?? null,
-        items: [],
+        teacherName: null,
+        track: subj?.track ?? null,
+        gradesByAssessment: new Map(),
+        rawItems: [],
       });
     }
 
-    bySubject.get(key)!.items.push(g);
-  });
+    const entry = subjectMap.get(key)!;
+    entry.rawItems.push(g);
 
-  const groups = Array.from(bySubject.values()).sort((a, b) =>
+    const normalizedAssessment = normalizeAssessmentLabel(g.assessment);
+    if (normalizedAssessment) {
+      entry.gradesByAssessment.set(normalizedAssessment, {
+        score: g.score != null ? Number(g.score) : null,
+        max: g.max_score != null ? Number(g.max_score) : null,
+        updatedAt: g.updated_at ?? null,
+      });
+    }
+  }
+
+  const subjects = Array.from(subjectMap.values()).sort((a, b) =>
     a.subjectName.localeCompare(b.subjectName)
   );
 
   const termName = terms?.find((t: any) => t.id === termId)?.name ?? `Term ${termId}`;
 
-  const gradeRows = grades ?? [];
-  const gradeCount = gradeRows.length;
-  const subjectCount = groups.length;
-
   const scoredRows = gradeRows.filter(
-    (g: any) =>
-      g.score != null &&
-      g.max_score != null &&
-      Number(g.max_score) > 0
+    (g) => g.score != null && g.max_score != null && Number(g.max_score) > 0
   );
 
   const averagePercent =
@@ -189,13 +377,7 @@ export default async function ParentGradesPage({
             <p className="portal-subtitle">
               Child: <span className="font-medium">{student.full_name}</span> • Term:{" "}
               <span className="font-medium">{termName}</span>
-              {enrollment?.class_id ? (
-                <>
-                  {" • "}Class: <span className="font-medium">{cg?.name ?? enrollment.class_id}</span>
-                </>
-              ) : (
-                <> • Not enrolled for this term</>
-              )}
+              {" • "}Class: <span className="font-medium">{cg?.name ?? enrollment.class_id}</span>
             </p>
           </div>
 
@@ -244,85 +426,172 @@ export default async function ParentGradesPage({
       </section>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Subjects" value={subjectCount} />
-        <StatCard label="Grade records" value={gradeCount} />
+        <StatCard label="Subjects" value={subjects.length} />
+        <StatCard label="Grade records" value={gradeRows.length} />
         <StatCard
           label="Average"
           value={scoredRows.length > 0 ? `${averagePercent}%` : "—"}
           hint={scoredRows.length > 0 ? "Across recorded scores" : "No scored records yet"}
         />
-        <StatCard
-          label="Class"
-          value={cg?.name ?? "—"}
-          hint={student.class_level ?? ""}
-        />
+        <StatCard label="Class" value={cg?.name ?? "—"} hint={cg?.level ?? student.class_level ?? ""} />
       </section>
 
       <SectionCard
-        title="Results"
-        subtitle="Grades entered by teachers for this term."
+        title="Subject performance"
+        subtitle="Each subject shows the assigned teacher and recorded assessments for this term."
       >
-        {!enrollment?.class_id ? (
-          <div className="text-sm portal-muted">No enrollment found for this term.</div>
-        ) : gradeRows.length === 0 ? (
-          <div className="text-sm portal-muted">No grades recorded yet for this term.</div>
+        {subjects.length === 0 ? (
+          <div className="text-sm portal-muted">No subjects or grades found yet for this term.</div>
         ) : (
-          <div className="grid gap-4">
-            {groups.map((g, idx) => (
-              <div key={idx} className="rounded-2xl border bg-white/70 p-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="font-semibold text-[color:var(--ohs-charcoal)]">
-                    {g.subjectName}
+          <>
+            <div className="hidden xl:block overflow-x-auto">
+              <table className="min-w-full border-separate border-spacing-0 overflow-hidden rounded-2xl border bg-white/70">
+                <thead>
+                  <tr className="bg-slate-50">
+                    <th className="border-b px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600">
+                      Subject
+                    </th>
+                    <th className="border-b px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600">
+                      Teacher
+                    </th>
+                    {REPORT_COLUMNS.map((assessment) => (
+                      <th
+                        key={assessment}
+                        className="border-b px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600"
+                      >
+                        {assessment}
+                      </th>
+                    ))}
+                    <th className="border-b px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600">
+                      Subject Avg
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {subjects.map((subject) => {
+                    const subjectScored = subject.rawItems.filter(
+                      (g) => g.score != null && g.max_score != null && Number(g.max_score) > 0
+                    );
+                    const subjectAvg =
+                      subjectScored.length > 0
+                        ? Math.round(
+                            subjectScored.reduce((sum, row) => {
+                              return sum + (Number(row.score) / Number(row.max_score)) * 100;
+                            }, 0) / subjectScored.length
+                          )
+                        : null;
+
+                    return (
+                      <tr key={subject.subjectId} className="align-top">
+                        <td className="border-b px-4 py-3">
+                          <div className="font-medium text-slate-900">{subject.subjectName}</div>
+                          <div className="mt-1 flex flex-wrap gap-2">
+                            {subject.subjectCode ? <span className="portal-badge">{subject.subjectCode}</span> : null}
+                            {subject.track === "islamic" ? (
+                              <span className="portal-badge">Islamic</span>
+                            ) : (
+                              <span className="portal-badge">Secular</span>
+                            )}
+                          </div>
+                        </td>
+
+                        <td className="border-b px-4 py-3 text-sm text-slate-700">
+                          {subject.teacherName ?? "Not assigned"}
+                        </td>
+
+                        {REPORT_COLUMNS.map((assessment) => {
+                          const grade = subject.gradesByAssessment.get(assessment);
+                          const pct =
+                            grade?.score != null && grade?.max != null && grade.max > 0
+                              ? Math.round((grade.score / grade.max) * 100)
+                              : null;
+
+                          return (
+                            <td key={assessment} className="border-b px-4 py-3 text-sm text-slate-700">
+                              {grade ? (
+                                <div className="grid gap-1">
+                                  <div>{fmtScore(grade.score, grade.max)}</div>
+                                  {pct != null ? <div className="text-xs text-slate-500">{pct}%</div> : null}
+                                </div>
+                              ) : (
+                                <span className="text-slate-400">—</span>
+                              )}
+                            </td>
+                          );
+                        })}
+
+                        <td className="border-b px-4 py-3 text-sm font-medium text-slate-900">
+                          {subjectAvg != null ? `${subjectAvg}%` : "—"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="grid gap-4 xl:hidden">
+              {subjects.map((subject) => {
+                const subjectScored = subject.rawItems.filter(
+                  (g) => g.score != null && g.max_score != null && Number(g.max_score) > 0
+                );
+                const subjectAvg =
+                  subjectScored.length > 0
+                    ? Math.round(
+                        subjectScored.reduce((sum, row) => {
+                          return sum + (Number(row.score) / Number(row.max_score)) * 100;
+                        }, 0) / subjectScored.length
+                      )
+                    : null;
+
+                return (
+                  <div key={subject.subjectId} className="rounded-2xl border bg-white/70 p-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="font-semibold text-[color:var(--ohs-charcoal)]">
+                        {subject.subjectName}
+                      </div>
+                      {subject.subjectCode ? <span className="portal-badge">{subject.subjectCode}</span> : null}
+                    </div>
+
+                    <div className="mt-2 text-sm text-slate-600">
+                      Teacher: <span className="font-medium text-slate-900">{subject.teacherName ?? "Not assigned"}</span>
+                    </div>
+
+                    <div className="mt-2 text-sm text-slate-600">
+                      Average: <span className="font-medium text-slate-900">{subjectAvg != null ? `${subjectAvg}%` : "—"}</span>
+                    </div>
+
+                    <div className="mt-4 grid gap-2">
+                      {REPORT_COLUMNS.map((assessment) => {
+                        const grade = subject.gradesByAssessment.get(assessment);
+                        const pct =
+                          grade?.score != null && grade?.max != null && grade.max > 0
+                            ? Math.round((grade.score / grade.max) * 100)
+                            : null;
+
+                        return (
+                          <div
+                            key={assessment}
+                            className="rounded-xl border bg-white/70 p-3 flex items-center justify-between gap-3"
+                          >
+                            <div className="min-w-0">
+                              <div className="text-sm font-medium">{assessment}</div>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="portal-badge">
+                                {grade ? fmtScore(grade.score, grade.max) : "—"}
+                              </span>
+                              {pct != null ? <span className="portal-badge">{pct}%</span> : null}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                  {g.subjectCode ? <span className="portal-badge">{g.subjectCode}</span> : null}
-                </div>
-
-                <div className="mt-3 grid gap-2">
-                  {g.items
-                    .slice()
-                    .sort((a: any, b: any) =>
-                      String(a.assessment).localeCompare(String(b.assessment))
-                    )
-                    .map((row: any) => {
-                      const score = row.score != null ? Number(row.score) : null;
-                      const max = row.max_score != null ? Number(row.max_score) : null;
-                      const pct =
-                        score != null && max != null && max > 0
-                          ? Math.round((score / max) * 100)
-                          : null;
-
-                      return (
-                        <div
-                          key={row.id}
-                          className="rounded-xl border bg-white/70 p-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between"
-                        >
-                          <div className="min-w-0">
-                            <div className="text-sm font-medium truncate">
-                              {row.assessment}
-                            </div>
-                            <div className="text-xs text-slate-500">
-                              Updated:{" "}
-                              {row.updated_at
-                                ? new Date(row.updated_at).toLocaleString()
-                                : "—"}
-                            </div>
-                          </div>
-
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="portal-badge">
-                              {score ?? "—"} / {max ?? "—"}
-                            </span>
-                            {pct != null ? (
-                              <span className="portal-badge">{pct}%</span>
-                            ) : null}
-                          </div>
-                        </div>
-                      );
-                    })}
-                </div>
-              </div>
-            ))}
-          </div>
+                );
+              })}
+            </div>
+          </>
         )}
       </SectionCard>
     </div>

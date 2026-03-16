@@ -73,6 +73,15 @@ function DetailRow({
   );
 }
 
+function deriveSchoolLevelFromClassLevel(level: string | null | undefined) {
+  const value = String(level ?? "").trim().toUpperCase();
+
+  if (!value) return null;
+  if (value.startsWith("P")) return "primary";
+  if (value === "S5" || value === "S6") return "a-level";
+  return "o-level";
+}
+
 export default async function AdminStudentProfilePage({
   params,
   searchParams,
@@ -103,7 +112,16 @@ export default async function AdminStudentProfilePage({
     );
   }
 
-  const [linkedParents, parentResults, portalEmail] = await Promise.all([
+  const sb = supabaseAdmin();
+
+  const [
+    linkedParents,
+    parentResults,
+    portalEmail,
+    termsRes,
+    classesRes,
+    currentEnrollmentRes,
+  ] = await Promise.all([
     listParentsForStudent(student.id),
     searchParents(qParent),
     (async () => {
@@ -111,7 +129,35 @@ export default async function AdminStudentProfilePage({
       const res = await supabaseAdmin().auth.admin.getUserById(student.user_id);
       return res.data?.user?.email ?? null;
     })(),
+    sb
+      .from("academic_terms")
+      .select("id, name, is_active")
+      .order("id", { ascending: false })
+      .limit(100),
+    sb
+      .from("class_groups")
+      .select("id, name, level, stream, track_key, is_active")
+      .eq("is_active", true)
+      .order("level", { ascending: true })
+      .order("stream", { ascending: true, nullsFirst: false })
+      .order("name", { ascending: true })
+      .limit(300),
+    sb
+      .from("enrollments")
+      .select("id, term_id, class_id")
+      .eq("student_id", student.id)
+      .order("id", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
+
+  if (termsRes.error) throw new Error(termsRes.error.message);
+  if (classesRes.error) throw new Error(classesRes.error.message);
+  if (currentEnrollmentRes.error) throw new Error(currentEnrollmentRes.error.message);
+
+  const terms = termsRes.data ?? [];
+  const classes = classesRes.data ?? [];
+  const currentEnrollment = currentEnrollmentRes.data ?? null;
 
   const displayName =
     student.full_name ||
@@ -136,6 +182,24 @@ export default async function AdminStudentProfilePage({
     ]
       .filter(Boolean)
       .join(" • ") || "Not set";
+
+  const activeTermId = terms.find((t: any) => t.is_active)?.id ?? terms[0]?.id ?? "";
+  const selectedEditTermId = currentEnrollment?.term_id ?? activeTermId ?? "";
+  const selectedEditClassId = currentEnrollment?.class_id ?? classes[0]?.id ?? "";
+
+  const selectedEditClass =
+    classes.find((c: any) => c.id === selectedEditClassId) ?? null;
+
+  const derivedPlacementPreview = selectedEditClass
+    ? [
+        deriveSchoolLevelFromClassLevel(selectedEditClass.level),
+        selectedEditClass.level,
+        selectedEditClass.stream ? `Stream ${selectedEditClass.stream}` : null,
+        selectedEditClass.track_key === "islamic" ? "Islamic" : "Secular",
+      ]
+        .filter(Boolean)
+        .join(" • ")
+    : "No class selected";
 
   return (
     <WatermarkedSection tone="portal" variant="mixed">
@@ -253,7 +317,7 @@ export default async function AdminStudentProfilePage({
 
                 {!student.student_no ? (
                   <div className="mt-2 text-xs text-slate-500">
-                    Set the school level first so the correct ID format can be generated.
+                    Choose the correct class/enrollment so the correct level is stored before generating the ID.
                   </div>
                 ) : null}
               </section>
@@ -380,6 +444,9 @@ export default async function AdminStudentProfilePage({
                   <Link className="portal-btn" href={`/portal/admin/finance/${student.id}`}>
                     Open finance record
                   </Link>
+                  <Link className="portal-btn" href={`/portal/admin/academics?tab=enrollments`}>
+                    Open enrollments
+                  </Link>
                   <Link className="portal-btn" href={`/portal/admin/users?role=student`}>
                     Student user accounts
                   </Link>
@@ -411,7 +478,7 @@ export default async function AdminStudentProfilePage({
               <section className="portal-surface p-6">
                 <h2 className="text-lg font-semibold text-slate-900">Edit student profile</h2>
                 <p className="mt-1 text-sm text-slate-600">
-                  Update the permanent student record. This does not remove academic history.
+                  Update the permanent student record and align the real class enrollment.
                 </p>
 
                 <form action={updateStudentProfile} className="mt-4 grid gap-4">
@@ -530,49 +597,52 @@ export default async function AdminStudentProfilePage({
                     </div>
                   </div>
 
-                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                    <label className="grid gap-1">
-                      <span className="text-sm">School level</span>
-                      <select
-                        className="portal-select"
-                        name="school_level"
-                        defaultValue={student.school_level ?? "o-level"}
-                        required
-                      >
-                        <option value="primary">Primary</option>
-                        <option value="o-level">O-Level</option>
-                        <option value="a-level">A-Level</option>
-                      </select>
-                    </label>
+                  <div className="rounded-2xl border border-slate-200 bg-white/70 p-4">
+                    <div className="text-sm font-semibold text-slate-900">Academic placement</div>
+                    <div className="mt-1 text-sm text-slate-600">
+                      Select the real term and class. The student’s school level, track, class level, and stream will be updated automatically from the selected class.
+                    </div>
 
-                    <label className="grid gap-1">
-                      <span className="text-sm">Track</span>
-                      <select className="portal-select" name="track" defaultValue={student.track ?? ""}>
-                        <option value="">Select</option>
-                        <option value="secular">Secular</option>
-                        <option value="islamic">Islamic</option>
-                      </select>
-                    </label>
+                    <div className="mt-4 grid gap-4 md:grid-cols-2">
+                      <label className="grid gap-1">
+                        <span className="text-sm">Term</span>
+                        <select
+                          className="portal-select"
+                          name="term_id"
+                          defaultValue={String(selectedEditTermId)}
+                          required
+                        >
+                          {terms.map((t: any) => (
+                            <option key={t.id} value={t.id}>
+                              {t.name} {t.is_active ? "(active)" : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
 
-                    <label className="grid gap-1">
-                      <span className="text-sm">Class level</span>
-                      <input
-                        className="portal-input"
-                        name="class_level"
-                        defaultValue={student.class_level ?? ""}
-                        placeholder="P5, S1, S5..."
-                      />
-                    </label>
+                      <label className="grid gap-1">
+                        <span className="text-sm">Class</span>
+                        <select
+                          className="portal-select"
+                          name="class_id"
+                          defaultValue={String(selectedEditClassId)}
+                          required
+                        >
+                          {classes.map((c: any) => (
+                            <option key={c.id} value={c.id}>
+                              {c.name}
+                              {c.level ? ` • ${c.level}` : ""}
+                              {c.stream ? ` • Stream ${c.stream}` : ""}
+                              {c.track_key === "islamic" ? " • Islamic" : " • Secular"}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
 
-                    <label className="grid gap-1">
-                      <span className="text-sm">Stream</span>
-                      <input
-                        className="portal-input"
-                        name="stream"
-                        defaultValue={student.stream ?? ""}
-                        placeholder="A, B..."
-                      />
-                    </label>
+                    <div className="mt-3 rounded-xl border border-slate-200 bg-white/70 p-3 text-xs text-slate-600">
+                      Current derived placement preview: {derivedPlacementPreview}
+                    </div>
                   </div>
 
                   <div className="grid gap-4 md:grid-cols-3">

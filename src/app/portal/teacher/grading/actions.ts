@@ -8,6 +8,25 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 
 const sb = () => supabaseAdmin();
 
+const REPORT_COLUMNS = [
+  "Mid Term 1",
+  "End Term 1",
+  "Mid Term 2",
+  "End Term 2",
+  "Mid Term 3",
+  "End of Year",
+] as const;
+
+function normalizeAssessmentLabel(value: string | null | undefined) {
+  const v = String(value ?? "").trim();
+
+  if (REPORT_COLUMNS.includes(v as (typeof REPORT_COLUMNS)[number])) {
+    return v as (typeof REPORT_COLUMNS)[number];
+  }
+
+  return null;
+}
+
 async function getOwnedScope(teacherId: string, teacherAssignmentId: number) {
   const { data, error } = await sb()
     .from("teacher_assignments")
@@ -24,6 +43,9 @@ async function getOwnedScope(teacherId: string, teacherAssignmentId: number) {
 export async function saveGrades(formData: FormData): Promise<void> {
   const me = await requireRole(["teacher"]);
 
+  const rawAssessment = String(formData.get("assessment") ?? "").trim();
+  const normalizedAssessment = normalizeAssessmentLabel(rawAssessment);
+
   const Schema = z.object({
     teacher_assignment_id: z.coerce.number().int().positive(),
     assessment: z.string().min(1).max(120),
@@ -32,34 +54,34 @@ export async function saveGrades(formData: FormData): Promise<void> {
 
   const parsed = Schema.safeParse({
     teacher_assignment_id: formData.get("teacher_assignment_id"),
-    assessment: String(formData.get("assessment") ?? "").trim(),
+    assessment: rawAssessment,
     max_score: Number(formData.get("max_score")),
   });
 
   const tid = Number(formData.get("teacher_assignment_id") ?? 0);
-  const assessment = String(formData.get("assessment") ?? "").trim();
-  const back = `/portal/teacher/grading?assignmentId=${tid}&assessment=${encodeURIComponent(assessment)}`;
+  const backAssessment = normalizedAssessment ?? "Mid Term 1";
+  const back = `/portal/teacher/grading?assignmentId=${tid}&assessment=${encodeURIComponent(backAssessment)}`;
 
-  if (!parsed.success) {
-    redirect(`${back}&err=${encodeURIComponent("Invalid assessment/max score.")}`);
+  if (!parsed.success || !normalizedAssessment) {
+    redirect(`${back}&err=${encodeURIComponent("Invalid assessment or max score.")}`);
   }
 
   const scope = await getOwnedScope(me.id, parsed.data.teacher_assignment_id);
 
-  // block if finalized
   const { data: meta, error: metaErr } = await sb()
     .from("grade_assessments")
     .select("id, finalized_at")
     .eq("term_id", scope.term_id)
     .eq("class_id", scope.class_id)
     .eq("subject_id", scope.subject_id)
-    .eq("assessment", parsed.data.assessment)
+    .eq("assessment", normalizedAssessment)
     .maybeSingle();
 
   if (metaErr) redirect(`${back}&err=${encodeURIComponent(metaErr.message)}`);
-  if (meta?.finalized_at) redirect(`${back}&err=${encodeURIComponent("This assessment is finalized and cannot be edited.")}`);
+  if (meta?.finalized_at) {
+    redirect(`${back}&err=${encodeURIComponent("This assessment is finalized and cannot be edited.")}`);
+  }
 
-  // upsert assessment meta (max_score)
   const { error: upMetaErr } = await sb()
     .from("grade_assessments")
     .upsert(
@@ -67,7 +89,7 @@ export async function saveGrades(formData: FormData): Promise<void> {
         term_id: scope.term_id,
         class_id: scope.class_id,
         subject_id: scope.subject_id,
-        assessment: parsed.data.assessment,
+        assessment: normalizedAssessment,
         max_score: parsed.data.max_score,
       },
       { onConflict: "term_id,class_id,subject_id,assessment" }
@@ -75,13 +97,13 @@ export async function saveGrades(formData: FormData): Promise<void> {
 
   if (upMetaErr) redirect(`${back}&err=${encodeURIComponent(upMetaErr.message)}`);
 
-  // upsert grades
   const rows: any[] = [];
   for (const [k, v] of formData.entries()) {
     if (!k.startsWith("score_")) continue;
     const studentId = k.replace("score_", "");
     const raw = String(v).trim();
     if (raw === "") continue;
+
     const score = Number(raw);
     if (Number.isNaN(score)) continue;
 
@@ -90,7 +112,7 @@ export async function saveGrades(formData: FormData): Promise<void> {
       class_id: scope.class_id,
       subject_id: scope.subject_id,
       term_id: scope.term_id,
-      assessment: parsed.data.assessment,
+      assessment: normalizedAssessment,
       score,
       max_score: parsed.data.max_score,
       updated_by: me.id,
@@ -99,8 +121,6 @@ export async function saveGrades(formData: FormData): Promise<void> {
   }
 
   if (rows.length > 0) {
-    // safest: upsert if you add unique constraint; otherwise insert/update loop.
-    // If you don't have a unique constraint, keep as insert/update loop.
     for (const r of rows) {
       const { data: existing, error: findErr } = await sb()
         .from("grades")
@@ -125,6 +145,8 @@ export async function saveGrades(formData: FormData): Promise<void> {
   }
 
   revalidatePath("/portal/teacher/grading");
+  revalidatePath("/portal/student/grades");
+  revalidatePath("/portal/parent/grades");
   redirect(`${back}&ok=1`);
 }
 
@@ -132,10 +154,14 @@ export async function finalizeAssessment(formData: FormData): Promise<void> {
   const me = await requireRole(["teacher"]);
 
   const teacherAssignmentId = Number(formData.get("teacher_assignment_id") ?? 0);
-  const assessment = String(formData.get("assessment") ?? "").trim();
-  const back = `/portal/teacher/grading?assignmentId=${teacherAssignmentId}&assessment=${encodeURIComponent(assessment)}`;
+  const rawAssessment = String(formData.get("assessment") ?? "").trim();
+  const normalizedAssessment = normalizeAssessmentLabel(rawAssessment) ?? "Mid Term 1";
 
-  if (!teacherAssignmentId || !assessment) redirect(`${back}&err=${encodeURIComponent("Missing scope.")}`);
+  const back = `/portal/teacher/grading?assignmentId=${teacherAssignmentId}&assessment=${encodeURIComponent(normalizedAssessment)}`;
+
+  if (!teacherAssignmentId || !normalizedAssessment) {
+    redirect(`${back}&err=${encodeURIComponent("Missing grading scope.")}`);
+  }
 
   const scope = await getOwnedScope(me.id, teacherAssignmentId);
 
@@ -145,7 +171,7 @@ export async function finalizeAssessment(formData: FormData): Promise<void> {
     .eq("term_id", scope.term_id)
     .eq("class_id", scope.class_id)
     .eq("subject_id", scope.subject_id)
-    .eq("assessment", assessment)
+    .eq("assessment", normalizedAssessment)
     .maybeSingle();
 
   if (metaErr) redirect(`${back}&err=${encodeURIComponent(metaErr.message)}`);
@@ -166,5 +192,7 @@ export async function finalizeAssessment(formData: FormData): Promise<void> {
   if (error) redirect(`${back}&err=${encodeURIComponent(error.message)}`);
 
   revalidatePath("/portal/teacher/grading");
+  revalidatePath("/portal/student/grades");
+  revalidatePath("/portal/parent/grades");
   redirect(`${back}&ok=1`);
 }

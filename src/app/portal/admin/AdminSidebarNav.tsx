@@ -267,6 +267,7 @@ export default function AdminSidebarNav() {
       items: [
         { href: "/portal/admin/users", label: "Users", icon: "users" },
         { href: "/portal/admin/students", label: "Students", icon: "users" },
+        { href: "/portal/admin/staff-internal", label: "Staff Internal", icon: "staff" },
         { href: "/portal/admin/academics", label: "Academics", icon: "academics" },
         { href: "/portal/admin/finance", label: "Finance", icon: "fees" },
         { href: "/portal/admin/parent-links", label: "Parent Links", icon: "users" },

@@ -1,6 +1,7 @@
 import "server-only";
 import { requireRole } from "@/lib/rbac";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { supabaseServer } from "@/lib/supabase/server";
 
 export async function getActiveTerm() {
   const sb = supabaseAdmin();
@@ -17,8 +18,146 @@ export async function getActiveTerm() {
   return data ?? null;
 }
 
+export async function getTeacherOrThrow() {
+  const me: any = await requireRole(["teacher"]);
+  const sb = supabaseAdmin();
+
+  // 1) New model: teachers.user_id = auth/profile id
+  const { data: byUserId, error: byUserIdErr } = await sb
+    .from("teachers")
+    .select(`
+      id,
+      user_id,
+      staff_no,
+      department,
+      full_name,
+      is_active,
+      updated_at,
+      first_name,
+      last_name,
+      other_names,
+      sex,
+      phone,
+      email,
+      photo_url,
+      date_of_birth,
+      national_id,
+      residence,
+      qualification,
+      employment_type,
+      salary_amount,
+      salary_frequency,
+      title_id,
+      is_muslim,
+      notes,
+      created_at,
+      subjects_summary,
+      classes_summary,
+      theology_role,
+      secular_role
+    `)
+    .eq("user_id", me.id)
+    .maybeSingle();
+
+  if (byUserIdErr) throw new Error(byUserIdErr.message);
+  if (byUserId?.id) return byUserId;
+
+  // 2) Legacy model: teachers.id = auth/profile id
+  const { data: byLegacyId, error: byLegacyIdErr } = await sb
+    .from("teachers")
+    .select(`
+      id,
+      user_id,
+      staff_no,
+      department,
+      full_name,
+      is_active,
+      updated_at,
+      first_name,
+      last_name,
+      other_names,
+      sex,
+      phone,
+      email,
+      photo_url,
+      date_of_birth,
+      national_id,
+      residence,
+      qualification,
+      employment_type,
+      salary_amount,
+      salary_frequency,
+      title_id,
+      is_muslim,
+      notes,
+      created_at,
+      subjects_summary,
+      classes_summary,
+      theology_role,
+      secular_role
+    `)
+    .eq("id", me.id)
+    .maybeSingle();
+
+  if (byLegacyIdErr) throw new Error(byLegacyIdErr.message);
+  if (byLegacyId?.id) return byLegacyId;
+
+  // 3) Fallback via auth session
+  try {
+    const sbServer = await supabaseServer();
+    const {
+      data: { user },
+    } = await sbServer.auth.getUser();
+
+    if (user?.id) {
+      const { data: byAuth, error: byAuthErr } = await sb
+        .from("teachers")
+        .select(`
+          id,
+          user_id,
+          staff_no,
+          department,
+          full_name,
+          is_active,
+          updated_at,
+          first_name,
+          last_name,
+          other_names,
+          sex,
+          phone,
+          email,
+          photo_url,
+          date_of_birth,
+          national_id,
+          residence,
+          qualification,
+          employment_type,
+          salary_amount,
+          salary_frequency,
+          title_id,
+          is_muslim,
+          notes,
+          created_at,
+          subjects_summary,
+          classes_summary,
+          theology_role,
+          secular_role
+        `)
+        .or(`user_id.eq.${user.id},id.eq.${user.id}`)
+        .maybeSingle();
+
+      if (byAuthErr) throw new Error(byAuthErr.message);
+      if (byAuth?.id) return byAuth;
+    }
+  } catch {
+    // ignore fallback failures
+  }
+
+  throw new Error("Teacher profile not found");
+}
+
 export async function getTeacherAssignments(opts?: { termId?: number }) {
-  const me = await requireRole(["teacher"]);
+  const teacher = await getTeacherOrThrow();
   const sb = supabaseAdmin();
 
   const activeTerm = opts?.termId ? { id: opts.termId } : await getActiveTerm();
@@ -33,11 +172,11 @@ export async function getTeacherAssignments(opts?: { termId?: number }) {
       subject_id,
       teacher_id,
       academic_terms:term_id ( id, name ),
-      class_groups:class_id ( id, name, level, track_key ),
-      subjects:subject_id ( id, name, code, track )
+      class_groups:class_id ( id, name, level, school_level, stream, track_key ),
+      subjects:subject_id ( id, name, code, track, school_level, subject_category )
     `)
     .eq("term_id", activeTerm.id)
-    .eq("teacher_id", me.id)
+    .eq("teacher_id", teacher.id)
     .order("id", { ascending: true });
 
   if (error) throw new Error(error.message);
@@ -45,7 +184,7 @@ export async function getTeacherAssignments(opts?: { termId?: number }) {
 }
 
 export async function getTeacherAssignmentById(assignmentId: number) {
-  const me = await requireRole(["teacher"]);
+  const teacher = await getTeacherOrThrow();
   const sb = supabaseAdmin();
 
   const { data, error } = await sb
@@ -57,11 +196,11 @@ export async function getTeacherAssignmentById(assignmentId: number) {
       subject_id,
       teacher_id,
       academic_terms:term_id ( id, name ),
-      class_groups:class_id ( id, name, level, track_key ),
-      subjects:subject_id ( id, name, code, track )
+      class_groups:class_id ( id, name, level, school_level, stream, track_key ),
+      subjects:subject_id ( id, name, code, track, school_level, subject_category )
     `)
     .eq("id", assignmentId)
-    .eq("teacher_id", me.id)
+    .eq("teacher_id", teacher.id)
     .maybeSingle();
 
   if (error) throw new Error(error.message);

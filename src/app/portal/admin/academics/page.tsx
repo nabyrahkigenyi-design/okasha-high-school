@@ -11,6 +11,7 @@ import {
   listTeachers,
   listStudents,
   listAssignments,
+  listClassTeachers,
   listEnrollments,
   getEnrollmentCount,
 } from "./queries";
@@ -27,8 +28,11 @@ import {
   setSubjectActive,
   createAssignment,
   deleteAssignment,
+  upsertClassTeacher,
+  deleteClassTeacher,
   addEnrollment,
   deleteEnrollment,
+  promoteStudentsToActiveTerm,
 } from "./actions";
 
 function Pill({ children }: { children: React.ReactNode }) {
@@ -37,7 +41,11 @@ function Pill({ children }: { children: React.ReactNode }) {
 
 function BadgeTrack({ track }: { track: "secular" | "islamic" }) {
   return (
-    <span className={`portal-badge ${track === "islamic" ? "portal-badge-islamic" : "portal-badge-secular"}`}>
+    <span
+      className={`portal-badge ${
+        track === "islamic" ? "portal-badge-islamic" : "portal-badge-secular"
+      }`}
+    >
       {track === "islamic" ? "Islamic" : "Secular"}
     </span>
   );
@@ -58,12 +66,18 @@ function SectionTitle({
         <h1 className="portal-title">{title}</h1>
         {subtitle ? <p className="portal-subtitle">{subtitle}</p> : null}
       </div>
-      {right ? <div className="flex items-center gap-2">{right}</div> : null}
+      {right ? <div className="flex flex-wrap items-center gap-2">{right}</div> : null}
     </div>
   );
 }
 
-function GhostLink({ href, children }: { href: string; children: React.ReactNode }) {
+function GhostLink({
+  href,
+  children,
+}: {
+  href: string;
+  children: React.ReactNode;
+}) {
   return (
     <Link className="portal-btn" href={href}>
       {children}
@@ -97,7 +111,7 @@ function SearchBar({
   placeholder: string;
 }) {
   return (
-    <form method="get" className="mt-3 flex gap-2">
+    <form method="get" className="mt-3 flex flex-wrap gap-2">
       <input type="hidden" name="tab" value={tab} />
       {showInactive ? <input type="hidden" name="showInactive" value="1" /> : null}
 
@@ -108,12 +122,22 @@ function SearchBar({
       </button>
 
       {q ? (
-        <Link className="portal-btn" href={`/portal/admin/academics?tab=${tab}${showInactive ? "&showInactive=1" : ""}`}>
+        <Link
+          className="portal-btn"
+          href={`/portal/admin/academics?tab=${tab}${showInactive ? "&showInactive=1" : ""}`}
+        >
           Clear
         </Link>
       ) : null}
     </form>
   );
+}
+
+function schoolLevelLabel(value: string | null | undefined) {
+  if (value === "primary") return "Primary";
+  if (value === "o-level") return "O-level";
+  if (value === "a-level") return "A-level";
+  return value ?? "—";
 }
 
 export default async function AdminAcademicsPage({
@@ -147,7 +171,10 @@ export default async function AdminAcademicsPage({
   const classes =
     tab === "classes"
       ? await listClasses({ includeInactive: showInactive, q })
-      : await listClasses({ includeInactive: false, q: tab === "enrollments" ? qClass : "" });
+      : await listClasses({
+          includeInactive: false,
+          q: tab === "enrollments" ? qClass : "",
+        });
 
   const subjects =
     tab === "subjects"
@@ -156,38 +183,65 @@ export default async function AdminAcademicsPage({
 
   const selectedId = params.id ? Number(params.id) : null;
 
-  const selectedTerm = tab === "terms" && selectedId ? terms.find((t: any) => t.id === selectedId) : null;
-  const selectedClass = tab === "classes" && selectedId ? classes.find((c: any) => c.id === selectedId) : null;
-  const selectedSubject = tab === "subjects" && selectedId ? subjects.find((s: any) => s.id === selectedId) : null;
+  const selectedTerm =
+    tab === "terms" && selectedId ? terms.find((t: any) => t.id === selectedId) : null;
+  const selectedClass =
+    tab === "classes" && selectedId ? classes.find((c: any) => c.id === selectedId) : null;
+  const selectedSubject =
+    tab === "subjects" && selectedId ? subjects.find((s: any) => s.id === selectedId) : null;
 
   const termById = new Map<number, any>(terms.map((t: any) => [t.id, t]));
   const classById = new Map<number, any>(classes.map((c: any) => [c.id, c]));
 
-  const teachers = tab === "assignments" ? await listTeachers() : [];
+  const teachers =
+    tab === "assignments" || tab === "class-teachers" ? await listTeachers() : [];
   const assignments = tab === "assignments" ? await listAssignments() : [];
+  const classTeachers = tab === "class-teachers" ? await listClassTeachers() : [];
 
-  const secularAssignments = assignments.filter((a: any) => a.class_groups?.track_key !== "islamic");
-  const islamicAssignments = assignments.filter((a: any) => a.class_groups?.track_key === "islamic");
+  const secularAssignments = assignments.filter(
+    (a: any) => a.class_groups?.track_key !== "islamic"
+  );
+  const islamicAssignments = assignments.filter(
+    (a: any) => a.class_groups?.track_key === "islamic"
+  );
+
+  const secularClassTeachers = classTeachers.filter(
+    (a: any) => a.class_groups?.track_key !== "islamic"
+  );
+  const islamicClassTeachers = classTeachers.filter(
+    (a: any) => a.class_groups?.track_key === "islamic"
+  );
 
   const students = tab === "enrollments" ? await listStudents({ q: qStudent, limit: 500 }) : [];
 
-  const termId =
-    params.termId ? Number(params.termId) : (terms.find((t: any) => t.is_active)?.id ?? null);
+  const termId = params.termId
+    ? Number(params.termId)
+    : (terms.find((t: any) => t.is_active)?.id ?? null);
 
   const classId = params.classId ? Number(params.classId) : null;
 
   const enrollments =
-    tab === "enrollments" && termId && classId ? await listEnrollments(termId, classId) : [];
+    tab === "enrollments" && termId && classId
+      ? await listEnrollments(termId, classId)
+      : [];
 
   const toggleInactiveHref = (k: "classes" | "subjects") =>
     `/portal/admin/academics?tab=${k}${showInactive ? "" : "&showInactive=1"}`;
 
-  const secularClasses = classes.filter((c: any) => c.track_key === "secular" && (showInactive || c.is_active));
-  const islamicClasses = classes.filter((c: any) => c.track_key === "islamic" && (showInactive || c.is_active));
+  const secularClasses = classes.filter(
+    (c: any) => c.track_key === "secular" && (showInactive || c.is_active)
+  );
+  const islamicClasses = classes.filter(
+    (c: any) => c.track_key === "islamic" && (showInactive || c.is_active)
+  );
   const inactiveClasses = classes.filter((c: any) => !c.is_active);
 
-  const secularSubjects = subjects.filter((s: any) => s.track === "secular" && (showInactive || s.is_active));
-  const islamicSubjects = subjects.filter((s: any) => s.track === "islamic" && (showInactive || s.is_active));
+  const secularSubjects = subjects.filter(
+    (s: any) => s.track === "secular" && (showInactive || s.is_active)
+  );
+  const islamicSubjects = subjects.filter(
+    (s: any) => s.track === "islamic" && (showInactive || s.is_active)
+  );
   const inactiveSubjects = subjects.filter((s: any) => !s.is_active);
 
   const enrollmentOverview =
@@ -205,24 +259,25 @@ export default async function AdminAcademicsPage({
         )
       : [];
 
-  const secularOverview = enrollmentOverview.filter((x: any) => x.class.track_key === "secular");
-  const islamicOverview = enrollmentOverview.filter((x: any) => x.class.track_key === "islamic");
+  const secularOverview = enrollmentOverview.filter(
+    (x: any) => x.class.track_key === "secular"
+  );
+  const islamicOverview = enrollmentOverview.filter(
+    (x: any) => x.class.track_key === "islamic"
+  );
 
-  const baseTabHref = (k: string) => `/portal/admin/academics?tab=${k}${showInactive ? "&showInactive=1" : ""}`;
+  const baseTabHref = (k: string) =>
+    `/portal/admin/academics?tab=${k}${showInactive ? "&showInactive=1" : ""}`;
   const tabClass = (k: string) => `portal-tab ${tab === k ? "portal-tab-active" : ""}`;
 
   const okText =
-    tab === "terms"
-      ? "Saved."
-      : tab === "classes"
-        ? "Saved."
-        : tab === "subjects"
-          ? "Saved."
-          : tab === "assignments"
-            ? "Assignment saved."
-            : tab === "enrollments"
-              ? "Enrollment saved."
-              : "Saved.";
+    tab === "assignments"
+      ? "Assignment saved."
+      : tab === "class-teachers"
+        ? "Class teacher saved."
+        : tab === "enrollments"
+          ? "Enrollment saved."
+          : "Saved.";
 
   return (
     <WatermarkedSection tone="portal" variant="mixed">
@@ -239,10 +294,22 @@ export default async function AdminAcademicsPage({
           <Link className={tabClass("subjects")} href="/portal/admin/academics?tab=subjects">
             Subjects
           </Link>
-          <Link className={tabClass("assignments")} href="/portal/admin/academics?tab=assignments">
-            Assignments
+          <Link
+            className={tabClass("assignments")}
+            href="/portal/admin/academics?tab=assignments"
+          >
+            Subject Teachers
           </Link>
-          <Link className={tabClass("enrollments")} href="/portal/admin/academics?tab=enrollments">
+          <Link
+            className={tabClass("class-teachers")}
+            href="/portal/admin/academics?tab=class-teachers"
+          >
+            Class Teachers
+          </Link>
+          <Link
+            className={tabClass("enrollments")}
+            href="/portal/admin/academics?tab=enrollments"
+          >
             Enrollments
           </Link>
         </div>
@@ -251,14 +318,28 @@ export default async function AdminAcademicsPage({
           <div className="grid gap-6 lg:grid-cols-2">
             <section className="portal-surface p-5">
               <SectionTitle
-                title="Term"
-                subtitle="Create terms and choose the active term."
-                right={<GhostLink href="/portal/admin/academics?tab=terms">New</GhostLink>}
+                title="Terms"
+                subtitle="Create terms, activate a term, and promote students into the new active term."
+                right={
+                  <div className="flex flex-wrap items-center gap-2">
+                    <form action={promoteStudentsToActiveTerm}>
+                      <ConfirmSubmitButton
+                        className="portal-btn"
+                        confirmText="Promote eligible students from the previous term into the current active term?"
+                        title="Promote students"
+                      >
+                        Promote to Active Term
+                      </ConfirmSubmitButton>
+                    </form>
+                    <GhostLink href="/portal/admin/academics?tab=terms">New</GhostLink>
+                  </div>
+                }
               />
 
               {selectedTerm ? (
                 <div className="mt-3 text-sm portal-muted">
-                  Editing: <span className="font-medium text-slate-900">{selectedTerm.name}</span>
+                  Editing:{" "}
+                  <span className="font-medium text-slate-900">{selectedTerm.name}</span>
                 </div>
               ) : null}
 
@@ -300,7 +381,11 @@ export default async function AdminAcademicsPage({
                 </div>
 
                 <label className="flex items-center gap-2">
-                  <input type="checkbox" name="is_active" defaultChecked={selectedTerm?.is_active ?? false} />
+                  <input
+                    type="checkbox"
+                    name="is_active"
+                    defaultChecked={selectedTerm?.is_active ?? false}
+                  />
                   <span className="text-sm">Set as active</span>
                 </label>
 
@@ -321,7 +406,10 @@ export default async function AdminAcademicsPage({
                   <div key={t.id} className="flex items-start justify-between gap-4 px-3 py-3">
                     <div>
                       <div className="font-medium">
-                        {t.name} {t.is_active ? <span className="text-xs text-green-700">• active</span> : null}
+                        {t.name}{" "}
+                        {t.is_active ? (
+                          <span className="text-xs text-green-700">• active</span>
+                        ) : null}
                       </div>
                       <div className="text-xs text-slate-500">
                         {t.starts_on} → {t.ends_on}
@@ -329,7 +417,10 @@ export default async function AdminAcademicsPage({
                     </div>
 
                     <div className="flex items-center gap-2">
-                      <Link className="text-sm underline" href={`/portal/admin/academics?tab=terms&id=${t.id}`}>
+                      <Link
+                        className="text-sm underline"
+                        href={`/portal/admin/academics?tab=terms&id=${t.id}`}
+                      >
                         Edit
                       </Link>
 
@@ -356,7 +447,9 @@ export default async function AdminAcademicsPage({
                   </div>
                 ))}
 
-                {terms.length === 0 ? <div className="px-3 py-6 text-sm portal-muted">No terms yet.</div> : null}
+                {terms.length === 0 ? (
+                  <div className="px-3 py-6 text-sm portal-muted">No terms yet.</div>
+                ) : null}
               </div>
             </section>
           </div>
@@ -366,8 +459,8 @@ export default async function AdminAcademicsPage({
           <div className="grid gap-6 lg:grid-cols-2">
             <section className="portal-surface p-5">
               <SectionTitle
-                title="Class"
-                subtitle="Create class groups and manage active/inactive classes."
+                title="Classes"
+                subtitle="Create real class groups for Primary, O-level, and A-level."
                 right={
                   <>
                     <GhostLink href={toggleInactiveHref("classes")}>
@@ -380,23 +473,54 @@ export default async function AdminAcademicsPage({
 
               {selectedClass ? (
                 <div className="mt-3 text-sm portal-muted">
-                  Editing: <span className="font-medium text-slate-900">{selectedClass.name}</span>
+                  Editing:{" "}
+                  <span className="font-medium text-slate-900">{selectedClass.name}</span>
                 </div>
               ) : null}
 
-              <SearchBar tab="classes" showInactive={showInactive} q={q} placeholder="Search classes (e.g. S1A, S2, A, B ...)" />
+              <SearchBar
+                tab="classes"
+                showInactive={showInactive}
+                q={q}
+                placeholder="Search classes (e.g. Senior 1 B, S2, Sciences, Arts...)"
+              />
 
               <form action={upsertClass} className="mt-4 grid gap-3">
                 <input type="hidden" name="id" value={selectedId ?? ""} />
 
                 <label className="grid gap-1">
-                  <span className="text-sm">Name</span>
-                  <input className="portal-input" name="name" required placeholder="Senior 1 A" defaultValue={selectedClass?.name ?? ""} />
+                  <span className="text-sm">Class name</span>
+                  <input
+                    className="portal-input"
+                    name="name"
+                    required
+                    placeholder="Senior 1 B"
+                    defaultValue={selectedClass?.name ?? ""}
+                  />
                 </label>
 
                 <label className="grid gap-1">
                   <span className="text-sm">Level</span>
-                  <input className="portal-input" name="level" required placeholder="S1" defaultValue={selectedClass?.level ?? ""} />
+                  <input
+                    className="portal-input"
+                    name="level"
+                    required
+                    placeholder="P1, P7, S1, S5..."
+                    defaultValue={selectedClass?.level ?? ""}
+                  />
+                </label>
+
+                <label className="grid gap-1">
+                  <span className="text-sm">School level</span>
+                  <select
+                    className="portal-select"
+                    name="school_level"
+                    defaultValue={selectedClass?.school_level ?? "o-level"}
+                  >
+                    <option value="primary">Primary</option>
+                    <option value="o-level">O-level</option>
+                    <option value="a-level">A-level</option>
+                  </select>
                 </label>
 
                 <label className="grid gap-1">
@@ -404,21 +528,29 @@ export default async function AdminAcademicsPage({
                   <input
                     className="portal-input"
                     name="stream"
-                    placeholder="A, B, East..."
+                    placeholder="A, B, Sciences, Arts..."
                     defaultValue={selectedClass?.stream ?? ""}
                   />
                 </label>
 
                 <label className="grid gap-1">
                   <span className="text-sm">Track</span>
-                  <select className="portal-select" name="track_key" defaultValue={selectedClass?.track_key ?? "secular"}>
+                  <select
+                    className="portal-select"
+                    name="track_key"
+                    defaultValue={selectedClass?.track_key ?? "secular"}
+                  >
                     <option value="secular">Secular</option>
                     <option value="islamic">Islamic Theology</option>
                   </select>
                 </label>
 
                 <label className="flex items-center gap-2">
-                  <input type="checkbox" name="is_active" defaultChecked={selectedClass?.is_active ?? true} />
+                  <input
+                    type="checkbox"
+                    name="is_active"
+                    defaultChecked={selectedClass?.is_active ?? true}
+                  />
                   <span className="text-sm">Active</span>
                 </label>
 
@@ -431,7 +563,7 @@ export default async function AdminAcademicsPage({
             <section className="portal-surface p-5">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold">Classes</h2>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <Pill>Secular: {secularClasses.length}</Pill>
                   <Pill>Islamic: {islamicClasses.length}</Pill>
                   {showInactive ? <Pill>Inactive: {inactiveClasses.length}</Pill> : null}
@@ -454,6 +586,7 @@ export default async function AdminAcademicsPage({
                           <div className="font-medium">{c.name}</div>
                           <div className="text-xs text-slate-500">
                             {c.level}
+                            {c.school_level ? ` • ${schoolLevelLabel(c.school_level)}` : ""}
                             {c.stream ? ` • Stream ${c.stream}` : ""}
                             {c.is_active ? "" : " • inactive"}
                           </div>
@@ -462,14 +595,20 @@ export default async function AdminAcademicsPage({
                         <div className="flex items-center gap-2">
                           <Link
                             className="text-sm underline"
-                            href={`/portal/admin/academics?tab=classes&id=${c.id}${showInactive ? "&showInactive=1" : ""}${q ? `&q=${encodeURIComponent(q)}` : ""}`}
+                            href={`/portal/admin/academics?tab=classes&id=${c.id}${
+                              showInactive ? "&showInactive=1" : ""
+                            }${q ? `&q=${encodeURIComponent(q)}` : ""}`}
                           >
                             Edit
                           </Link>
 
                           <form action={setClassActive}>
                             <input type="hidden" name="id" value={c.id} />
-                            <input type="hidden" name="is_active" value={c.is_active ? "false" : "true"} />
+                            <input
+                              type="hidden"
+                              name="is_active"
+                              value={c.is_active ? "false" : "true"}
+                            />
                             <button type="submit" className="portal-btn">
                               {c.is_active ? "Deactivate" : "Activate"}
                             </button>
@@ -488,7 +627,9 @@ export default async function AdminAcademicsPage({
                       </div>
                     ))}
 
-                    {group.items.length === 0 ? <div className="px-3 py-4 text-sm portal-muted">None.</div> : null}
+                    {group.items.length === 0 ? (
+                      <div className="px-3 py-4 text-sm portal-muted">None.</div>
+                    ) : null}
                   </div>
                 </div>
               ))}
@@ -503,20 +644,25 @@ export default async function AdminAcademicsPage({
                           <div className="font-medium">{c.name}</div>
                           <div className="text-xs text-slate-500">
                             {c.level}
+                            {c.school_level ? ` • ${schoolLevelLabel(c.school_level)}` : ""}
                             {c.stream ? ` • Stream ${c.stream}` : ""}
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
                           <Link
                             className="text-sm underline"
-                            href={`/portal/admin/academics?tab=classes&id=${c.id}&showInactive=1${q ? `&q=${encodeURIComponent(q)}` : ""}`}
+                            href={`/portal/admin/academics?tab=classes&id=${c.id}&showInactive=1${
+                              q ? `&q=${encodeURIComponent(q)}` : ""
+                            }`}
                           >
                             Edit
                           </Link>
                           <form action={setClassActive}>
                             <input type="hidden" name="id" value={c.id} />
                             <input type="hidden" name="is_active" value="true" />
-                            <button className="portal-btn" type="submit">Activate</button>
+                            <button className="portal-btn" type="submit">
+                              Activate
+                            </button>
                           </form>
                         </div>
                       </div>
@@ -532,8 +678,8 @@ export default async function AdminAcademicsPage({
           <div className="grid gap-6 lg:grid-cols-2">
             <section className="portal-surface p-5">
               <SectionTitle
-                title="Subject"
-                subtitle="Create subjects and keep secular and Islamic theology tracks organized."
+                title="Subjects"
+                subtitle="Organize subjects by school level, category, and track."
                 right={
                   <>
                     <GhostLink href={toggleInactiveHref("subjects")}>
@@ -546,35 +692,83 @@ export default async function AdminAcademicsPage({
 
               {selectedSubject ? (
                 <div className="mt-3 text-sm portal-muted">
-                  Editing: <span className="font-medium text-slate-900">{selectedSubject.name}</span>
+                  Editing:{" "}
+                  <span className="font-medium text-slate-900">{selectedSubject.name}</span>
                 </div>
               ) : null}
 
-              <SearchBar tab="subjects" showInactive={showInactive} q={q} placeholder="Search subjects (name or code)" />
+              <SearchBar
+                tab="subjects"
+                showInactive={showInactive}
+                q={q}
+                placeholder="Search subjects (name or code)"
+              />
 
               <form action={upsertSubject} className="mt-4 grid gap-3">
                 <input type="hidden" name="id" value={selectedId ?? ""} />
 
                 <label className="grid gap-1">
                   <span className="text-sm">Code (optional)</span>
-                  <input className="portal-input" name="code" placeholder="MATH" defaultValue={selectedSubject?.code ?? ""} />
+                  <input
+                    className="portal-input"
+                    name="code"
+                    placeholder="MATH"
+                    defaultValue={selectedSubject?.code ?? ""}
+                  />
                 </label>
 
                 <label className="grid gap-1">
                   <span className="text-sm">Name</span>
-                  <input className="portal-input" name="name" required placeholder="Mathematics" defaultValue={selectedSubject?.name ?? ""} />
+                  <input
+                    className="portal-input"
+                    name="name"
+                    required
+                    placeholder="Mathematics"
+                    defaultValue={selectedSubject?.name ?? ""}
+                  />
+                </label>
+
+                <label className="grid gap-1">
+                  <span className="text-sm">School level</span>
+                  <select
+                    className="portal-select"
+                    name="school_level"
+                    defaultValue={selectedSubject?.school_level ?? "o-level"}
+                  >
+                    <option value="primary">Primary</option>
+                    <option value="o-level">O-level</option>
+                    <option value="a-level">A-level</option>
+                  </select>
+                </label>
+
+                <label className="grid gap-1">
+                  <span className="text-sm">Category / group</span>
+                  <input
+                    className="portal-input"
+                    name="subject_category"
+                    placeholder="Sciences, Arts, Compulsory..."
+                    defaultValue={selectedSubject?.subject_category ?? ""}
+                  />
                 </label>
 
                 <label className="grid gap-1">
                   <span className="text-sm">Track</span>
-                  <select className="portal-select" name="track" defaultValue={selectedSubject?.track ?? "secular"}>
+                  <select
+                    className="portal-select"
+                    name="track"
+                    defaultValue={selectedSubject?.track ?? "secular"}
+                  >
                     <option value="secular">Secular</option>
                     <option value="islamic">Islamic Theology</option>
                   </select>
                 </label>
 
                 <label className="flex items-center gap-2">
-                  <input type="checkbox" name="is_active" defaultChecked={selectedSubject?.is_active ?? true} />
+                  <input
+                    type="checkbox"
+                    name="is_active"
+                    defaultChecked={selectedSubject?.is_active ?? true}
+                  />
                   <span className="text-sm">Active</span>
                 </label>
 
@@ -587,7 +781,7 @@ export default async function AdminAcademicsPage({
             <section className="portal-surface p-5">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold">Subjects</h2>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <Pill>Secular: {secularSubjects.length}</Pill>
                   <Pill>Islamic: {islamicSubjects.length}</Pill>
                   {showInactive ? <Pill>Inactive: {inactiveSubjects.length}</Pill> : null}
@@ -608,20 +802,31 @@ export default async function AdminAcademicsPage({
                       <div key={s.id} className="flex items-center justify-between gap-4 px-3 py-3">
                         <div>
                           <div className="font-medium">{s.name}</div>
-                          <div className="text-xs text-slate-500">{s.code ? s.code : ""} {s.is_active ? "" : "• inactive"}</div>
+                          <div className="text-xs text-slate-500">
+                            {s.code ? s.code : ""}
+                            {s.school_level ? ` • ${schoolLevelLabel(s.school_level)}` : ""}
+                            {s.subject_category ? ` • ${s.subject_category}` : ""}
+                            {s.is_active ? "" : " • inactive"}
+                          </div>
                         </div>
 
                         <div className="flex items-center gap-2">
                           <Link
                             className="text-sm underline"
-                            href={`/portal/admin/academics?tab=subjects&id=${s.id}${showInactive ? "&showInactive=1" : ""}${q ? `&q=${encodeURIComponent(q)}` : ""}`}
+                            href={`/portal/admin/academics?tab=subjects&id=${s.id}${
+                              showInactive ? "&showInactive=1" : ""
+                            }${q ? `&q=${encodeURIComponent(q)}` : ""}`}
                           >
                             Edit
                           </Link>
 
                           <form action={setSubjectActive}>
                             <input type="hidden" name="id" value={s.id} />
-                            <input type="hidden" name="is_active" value={s.is_active ? "false" : "true"} />
+                            <input
+                              type="hidden"
+                              name="is_active"
+                              value={s.is_active ? "false" : "true"}
+                            />
                             <button type="submit" className="portal-btn">
                               {s.is_active ? "Deactivate" : "Activate"}
                             </button>
@@ -640,7 +845,9 @@ export default async function AdminAcademicsPage({
                       </div>
                     ))}
 
-                    {group.items.length === 0 ? <div className="px-3 py-4 text-sm portal-muted">None.</div> : null}
+                    {group.items.length === 0 ? (
+                      <div className="px-3 py-4 text-sm portal-muted">None.</div>
+                    ) : null}
                   </div>
                 </div>
               ))}
@@ -651,18 +858,29 @@ export default async function AdminAcademicsPage({
                   <div className="mt-2 divide-y rounded-xl border bg-white/70">
                     {inactiveSubjects.map((s: any) => (
                       <div key={s.id} className="flex items-center justify-between px-3 py-3">
-                        <div className="font-medium">{s.name}</div>
+                        <div>
+                          <div className="font-medium">{s.name}</div>
+                          <div className="text-xs text-slate-500">
+                            {s.code ? s.code : ""}
+                            {s.school_level ? ` • ${schoolLevelLabel(s.school_level)}` : ""}
+                            {s.subject_category ? ` • ${s.subject_category}` : ""}
+                          </div>
+                        </div>
                         <div className="flex items-center gap-2">
                           <Link
                             className="text-sm underline"
-                            href={`/portal/admin/academics?tab=subjects&id=${s.id}&showInactive=1${q ? `&q=${encodeURIComponent(q)}` : ""}`}
+                            href={`/portal/admin/academics?tab=subjects&id=${s.id}&showInactive=1${
+                              q ? `&q=${encodeURIComponent(q)}` : ""
+                            }`}
                           >
                             Edit
                           </Link>
                           <form action={setSubjectActive}>
                             <input type="hidden" name="id" value={s.id} />
                             <input type="hidden" name="is_active" value="true" />
-                            <button className="portal-btn" type="submit">Activate</button>
+                            <button className="portal-btn" type="submit">
+                              Activate
+                            </button>
                           </form>
                         </div>
                       </div>
@@ -677,7 +895,10 @@ export default async function AdminAcademicsPage({
         {tab === "assignments" ? (
           <div className="grid gap-6 lg:grid-cols-2">
             <section className="portal-surface p-5">
-              <SectionTitle title="Assignments" subtitle="Assign a teacher to teach a subject for a class in a term." />
+              <SectionTitle
+                title="Subject teachers"
+                subtitle="Assign a teacher to teach a subject for a class in a term."
+              />
 
               <form action={createAssignment} className="mt-4 grid gap-3">
                 <label className="grid gap-1">
@@ -689,7 +910,8 @@ export default async function AdminAcademicsPage({
                   >
                     {terms.map((t: any) => (
                       <option key={t.id} value={t.id}>
-                        {t.name}{t.is_active ? " (active)" : ""}
+                        {t.name}
+                        {t.is_active ? " (active)" : ""}
                       </option>
                     ))}
                   </select>
@@ -700,7 +922,8 @@ export default async function AdminAcademicsPage({
                   <select className="portal-select" name="class_id">
                     {classes.map((c: any) => (
                       <option key={c.id} value={c.id}>
-                        {c.name} {c.track_key === "islamic" ? "(Islamic)" : "(Secular)"}
+                        {c.name} • {schoolLevelLabel(c.school_level)}{" "}
+                        {c.track_key === "islamic" ? "(Islamic)" : "(Secular)"}
                       </option>
                     ))}
                   </select>
@@ -711,7 +934,9 @@ export default async function AdminAcademicsPage({
                   <select className="portal-select" name="subject_id">
                     {subjects.map((s: any) => (
                       <option key={s.id} value={s.id}>
-                        {s.code ? `${s.code} — ` : ""}{s.name}
+                        {s.code ? `${s.code} — ` : ""}
+                        {s.name}
+                        {s.school_level ? ` • ${schoolLevelLabel(s.school_level)}` : ""}
                       </option>
                     ))}
                   </select>
@@ -736,7 +961,7 @@ export default async function AdminAcademicsPage({
 
             <section className="portal-surface p-5">
               <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold">Existing assignments</h2>
+                <h2 className="text-lg font-semibold">Existing subject teachers</h2>
                 <Pill>{assignments.length} total</Pill>
               </div>
 
@@ -751,8 +976,12 @@ export default async function AdminAcademicsPage({
                   {secularAssignments.map((a: any) => (
                     <div key={a.id} className="flex items-start justify-between gap-4 px-3 py-3">
                       <div>
-                        <div className="font-medium">{a.class_groups?.name} • {a.subjects?.name}</div>
-                        <div className="text-xs text-slate-500">{a.academic_terms?.name} • {a.teachers?.full_name}</div>
+                        <div className="font-medium">
+                          {a.class_groups?.name} • {a.subjects?.name}
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          {a.academic_terms?.name} • {a.teachers?.full_name}
+                        </div>
                       </div>
                       <form action={deleteAssignment}>
                         <input type="hidden" name="id" value={a.id} />
@@ -765,7 +994,9 @@ export default async function AdminAcademicsPage({
                       </form>
                     </div>
                   ))}
-                  {secularAssignments.length === 0 ? <div className="px-3 py-4 text-sm portal-muted">None.</div> : null}
+                  {secularAssignments.length === 0 ? (
+                    <div className="px-3 py-4 text-sm portal-muted">None.</div>
+                  ) : null}
                 </div>
               </div>
 
@@ -780,8 +1011,12 @@ export default async function AdminAcademicsPage({
                   {islamicAssignments.map((a: any) => (
                     <div key={a.id} className="flex items-start justify-between gap-4 px-3 py-3">
                       <div>
-                        <div className="font-medium">{a.class_groups?.name} • {a.subjects?.name}</div>
-                        <div className="text-xs text-slate-500">{a.academic_terms?.name} • {a.teachers?.full_name}</div>
+                        <div className="font-medium">
+                          {a.class_groups?.name} • {a.subjects?.name}
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          {a.academic_terms?.name} • {a.teachers?.full_name}
+                        </div>
                       </div>
                       <form action={deleteAssignment}>
                         <input type="hidden" name="id" value={a.id} />
@@ -794,7 +1029,138 @@ export default async function AdminAcademicsPage({
                       </form>
                     </div>
                   ))}
-                  {islamicAssignments.length === 0 ? <div className="px-3 py-4 text-sm portal-muted">None.</div> : null}
+                  {islamicAssignments.length === 0 ? (
+                    <div className="px-3 py-4 text-sm portal-muted">None.</div>
+                  ) : null}
+                </div>
+              </div>
+            </section>
+          </div>
+        ) : null}
+
+        {tab === "class-teachers" ? (
+          <div className="grid gap-6 lg:grid-cols-2">
+            <section className="portal-surface p-5">
+              <SectionTitle
+                title="Class teachers"
+                subtitle="Assign one main class teacher per class for a term."
+              />
+
+              <form action={upsertClassTeacher} className="mt-4 grid gap-3">
+                <label className="grid gap-1">
+                  <span className="text-sm">Term</span>
+                  <select
+                    className="portal-select"
+                    name="term_id"
+                    defaultValue={terms.find((t: any) => t.is_active)?.id ?? terms[0]?.id}
+                  >
+                    {terms.map((t: any) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                        {t.is_active ? " (active)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="grid gap-1">
+                  <span className="text-sm">Class</span>
+                  <select className="portal-select" name="class_id">
+                    {classes.map((c: any) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} • {schoolLevelLabel(c.school_level)}{" "}
+                        {c.track_key === "islamic" ? "(Islamic)" : "(Secular)"}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="grid gap-1">
+                  <span className="text-sm">Teacher</span>
+                  <select className="portal-select" name="teacher_id">
+                    {teachers.map((t: any) => (
+                      <option key={t.id} value={t.id}>
+                        {t.full_name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <div className="pt-1">
+                  <PrimaryButton type="submit">Save class teacher</PrimaryButton>
+                </div>
+              </form>
+            </section>
+
+            <section className="portal-surface p-5">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold">Existing class teachers</h2>
+                <Pill>{classTeachers.length} total</Pill>
+              </div>
+
+              <div className="mt-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm font-semibold">
+                    Secular <BadgeTrack track="secular" />
+                  </div>
+                  <Pill>{secularClassTeachers.length}</Pill>
+                </div>
+                <div className="mt-2 divide-y rounded-xl border bg-white/70">
+                  {secularClassTeachers.map((a: any) => (
+                    <div key={a.id} className="flex items-start justify-between gap-4 px-3 py-3">
+                      <div>
+                        <div className="font-medium">{a.class_groups?.name}</div>
+                        <div className="text-xs text-slate-500">
+                          {a.academic_terms?.name} • {a.teachers?.full_name}
+                        </div>
+                      </div>
+                      <form action={deleteClassTeacher}>
+                        <input type="hidden" name="id" value={a.id} />
+                        <ConfirmSubmitButton
+                          className="portal-btn portal-btn-danger"
+                          confirmText={`Remove class teacher for ${a.class_groups?.name}?`}
+                        >
+                          Delete
+                        </ConfirmSubmitButton>
+                      </form>
+                    </div>
+                  ))}
+                  {secularClassTeachers.length === 0 ? (
+                    <div className="px-3 py-4 text-sm portal-muted">None.</div>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="mt-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm font-semibold">
+                    Islamic Theology <BadgeTrack track="islamic" />
+                  </div>
+                  <Pill>{islamicClassTeachers.length}</Pill>
+                </div>
+                <div className="mt-2 divide-y rounded-xl border bg-white/70">
+                  {islamicClassTeachers.map((a: any) => (
+                    <div key={a.id} className="flex items-start justify-between gap-4 px-3 py-3">
+                      <div>
+                        <div className="font-medium">{a.class_groups?.name}</div>
+                        <div className="text-xs text-slate-500">
+                          {a.academic_terms?.name} • {a.teachers?.full_name}
+                        </div>
+                      </div>
+                      <form action={deleteClassTeacher}>
+                        <input type="hidden" name="id" value={a.id} />
+                        <ConfirmSubmitButton
+                          className="portal-btn portal-btn-danger"
+                          confirmText={`Remove class teacher for ${a.class_groups?.name}?`}
+                        >
+                          Delete
+                        </ConfirmSubmitButton>
+                      </form>
+                    </div>
+                  ))}
+                  {islamicClassTeachers.length === 0 ? (
+                    <div className="px-3 py-4 text-sm portal-muted">None.</div>
+                  ) : null}
                 </div>
               </div>
             </section>
@@ -804,21 +1170,35 @@ export default async function AdminAcademicsPage({
         {tab === "enrollments" ? (
           <div className="grid gap-6 lg:grid-cols-2">
             <section className="portal-surface p-5">
-              <SectionTitle title="Enrollments" subtitle="Add / move a student into a class for a term." />
+              <SectionTitle
+                title="Enrollments"
+                subtitle="Add or move a student into a real class for a term."
+              />
 
-              <form method="get" className="mt-3 flex gap-2">
+              <form method="get" className="mt-3 flex flex-wrap gap-2">
                 <input type="hidden" name="tab" value="enrollments" />
                 {termId ? <input type="hidden" name="termId" value={String(termId)} /> : null}
                 {classId ? <input type="hidden" name="classId" value={String(classId)} /> : null}
                 {qClass ? <input type="hidden" name="qClass" value={qClass} /> : null}
 
-                <input className="portal-input" name="qStudent" defaultValue={qStudent} placeholder="Search student name…" />
-                <button className="portal-btn" type="submit">Search</button>
+                <input
+                  className="portal-input"
+                  name="qStudent"
+                  defaultValue={qStudent}
+                  placeholder="Search student name or ID…"
+                />
+                <button className="portal-btn" type="submit">
+                  Search
+                </button>
 
                 {qStudent ? (
                   <Link
                     className="portal-btn"
-                    href={`/portal/admin/academics?tab=enrollments${termId ? `&termId=${termId}` : ""}${classId ? `&classId=${classId}` : ""}${qClass ? `&qClass=${encodeURIComponent(qClass)}` : ""}`}
+                    href={`/portal/admin/academics?tab=enrollments${
+                      termId ? `&termId=${termId}` : ""
+                    }${classId ? `&classId=${classId}` : ""}${
+                      qClass ? `&qClass=${encodeURIComponent(qClass)}` : ""
+                    }`}
                   >
                     Clear
                   </Link>
@@ -831,7 +1211,8 @@ export default async function AdminAcademicsPage({
                   <select className="portal-select" name="term_id" defaultValue={termId ?? undefined}>
                     {terms.map((t: any) => (
                       <option key={t.id} value={t.id}>
-                        {t.name}{t.is_active ? " (active)" : ""}
+                        {t.name}
+                        {t.is_active ? " (active)" : ""}
                       </option>
                     ))}
                   </select>
@@ -839,10 +1220,15 @@ export default async function AdminAcademicsPage({
 
                 <label className="grid gap-1">
                   <span className="text-sm">Class</span>
-                  <select className="portal-select" name="class_id" defaultValue={classId ?? classes[0]?.id ?? undefined}>
+                  <select
+                    className="portal-select"
+                    name="class_id"
+                    defaultValue={classId ?? classes[0]?.id ?? undefined}
+                  >
                     {classes.map((c: any) => (
                       <option key={c.id} value={c.id}>
-                        {c.name} {c.track_key === "islamic" ? "(Islamic)" : "(Secular)"}
+                        {c.name} • {schoolLevelLabel(c.school_level)}{" "}
+                        {c.track_key === "islamic" ? "(Islamic)" : "(Secular)"}
                       </option>
                     ))}
                   </select>
@@ -852,7 +1238,10 @@ export default async function AdminAcademicsPage({
                   <span className="text-sm">Student</span>
                   <select className="portal-select" name="student_id">
                     {students.map((s: any) => (
-                      <option key={s.id} value={s.id}>{s.full_name}</option>
+                      <option key={s.id} value={s.id}>
+                        {s.full_name}
+                        {s.student_no ? ` — ${s.student_no}` : ""}
+                      </option>
                     ))}
                   </select>
 
@@ -868,18 +1257,27 @@ export default async function AdminAcademicsPage({
                 </div>
               </form>
 
-              <form method="get" className="mt-5 flex gap-2">
+              <form method="get" className="mt-5 flex flex-wrap gap-2">
                 <input type="hidden" name="tab" value="enrollments" />
                 {termId ? <input type="hidden" name="termId" value={String(termId)} /> : null}
                 {qStudent ? <input type="hidden" name="qStudent" value={qStudent} /> : null}
 
-                <input className="portal-input" name="qClass" defaultValue={qClass} placeholder="Search class name…" />
-                <button className="portal-btn" type="submit">Search</button>
+                <input
+                  className="portal-input"
+                  name="qClass"
+                  defaultValue={qClass}
+                  placeholder="Search class name…"
+                />
+                <button className="portal-btn" type="submit">
+                  Search
+                </button>
 
                 {qClass ? (
                   <Link
                     className="portal-btn"
-                    href={`/portal/admin/academics?tab=enrollments${termId ? `&termId=${termId}` : ""}${qStudent ? `&qStudent=${encodeURIComponent(qStudent)}` : ""}`}
+                    href={`/portal/admin/academics?tab=enrollments${
+                      termId ? `&termId=${termId}` : ""
+                    }${qStudent ? `&qStudent=${encodeURIComponent(qStudent)}` : ""}`}
                   >
                     Clear
                   </Link>
@@ -889,7 +1287,9 @@ export default async function AdminAcademicsPage({
 
             <section className="portal-surface p-5">
               <h2 className="text-lg font-semibold">
-                {termId ? `Enrollment overview — ${termById.get(termId)?.name ?? `Term ${termId}`}` : "Enrollment overview"}
+                {termId
+                  ? `Enrollment overview — ${termById.get(termId)?.name ?? `Term ${termId}`}`
+                  : "Enrollment overview"}
               </h2>
 
               {termId && classId ? (
@@ -901,7 +1301,14 @@ export default async function AdminAcademicsPage({
                   <div className="mt-3 divide-y rounded-xl border bg-white/70">
                     {enrollments.map((e: any) => (
                       <div key={e.id} className="flex items-center justify-between gap-4 px-3 py-3">
-                        <div className="font-medium">{e.students?.full_name}</div>
+                        <div>
+                          <div className="font-medium">{e.students?.full_name}</div>
+                          <div className="text-xs text-slate-500">
+                            {e.students?.student_no ? e.students.student_no : ""}
+                            {e.students?.class_level ? ` • ${e.students.class_level}` : ""}
+                            {e.students?.stream ? ` • Stream ${e.students.stream}` : ""}
+                          </div>
+                        </div>
                         <form action={deleteEnrollment}>
                           <input type="hidden" name="id" value={e.id} />
                           <input type="hidden" name="term_id" value={termId} />
@@ -917,14 +1324,18 @@ export default async function AdminAcademicsPage({
                     ))}
 
                     {enrollments.length === 0 ? (
-                      <div className="px-3 py-6 text-sm portal-muted">No students in this class yet.</div>
+                      <div className="px-3 py-6 text-sm portal-muted">
+                        No students in this class yet.
+                      </div>
                     ) : null}
                   </div>
 
                   <div className="mt-4">
                     <Link
                       className="text-sm underline"
-                      href={`/portal/admin/academics?tab=enrollments&termId=${termId}${qStudent ? `&qStudent=${encodeURIComponent(qStudent)}` : ""}${qClass ? `&qClass=${encodeURIComponent(qClass)}` : ""}`}
+                      href={`/portal/admin/academics?tab=enrollments&termId=${termId}${
+                        qStudent ? `&qStudent=${encodeURIComponent(qStudent)}` : ""
+                      }${qClass ? `&qClass=${encodeURIComponent(qClass)}` : ""}`}
                     >
                       Back to overview
                     </Link>
@@ -951,14 +1362,22 @@ export default async function AdminAcademicsPage({
                               <div>
                                 <div className="font-medium">{x.class.name}</div>
                                 <div className="text-xs text-slate-500">
-                                  {x.count} enrolled
+                                  {x.class.level}
+                                  {x.class.school_level
+                                    ? ` • ${schoolLevelLabel(x.class.school_level)}`
+                                    : ""}
+                                  {x.count ? ` • ${x.count} enrolled` : " • 0 enrolled"}
                                   {x.class.stream ? ` • Stream ${x.class.stream}` : ""}
                                 </div>
                               </div>
 
                               <Link
                                 className="text-sm underline"
-                                href={`/portal/admin/academics?tab=enrollments&termId=${termId}&classId=${x.class.id}${qStudent ? `&qStudent=${encodeURIComponent(qStudent)}` : ""}${qClass ? `&qClass=${encodeURIComponent(qClass)}` : ""}`}
+                                href={`/portal/admin/academics?tab=enrollments&termId=${termId}&classId=${
+                                  x.class.id
+                                }${qStudent ? `&qStudent=${encodeURIComponent(qStudent)}` : ""}${
+                                  qClass ? `&qClass=${encodeURIComponent(qClass)}` : ""
+                                }`}
                               >
                                 View all
                               </Link>
@@ -970,7 +1389,12 @@ export default async function AdminAcademicsPage({
                               ) : (
                                 <ul className="list-disc pl-5">
                                   {x.preview.map((e: any) => (
-                                    <li key={e.id}>{e.students?.full_name}</li>
+                                    <li key={e.id}>
+                                      {e.students?.full_name}
+                                      {e.students?.student_no
+                                        ? ` — ${e.students.student_no}`
+                                        : ""}
+                                    </li>
                                   ))}
                                 </ul>
                               )}
@@ -978,7 +1402,11 @@ export default async function AdminAcademicsPage({
                           </div>
                         ))}
 
-                        {group.items.length === 0 ? <div className="text-sm portal-muted">No classes found in this track.</div> : null}
+                        {group.items.length === 0 ? (
+                          <div className="text-sm portal-muted">
+                            No classes found in this track.
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                   ))}

@@ -12,6 +12,15 @@ function enc(s: string) {
   return encodeURIComponent(s);
 }
 
+function deriveSchoolLevelFromClassLevel(level: string | null | undefined) {
+  const value = String(level ?? "").trim().toUpperCase();
+
+  if (!value) return "o-level";
+  if (value.startsWith("P")) return "primary";
+  if (value === "S5" || value === "S6") return "a-level";
+  return "o-level";
+}
+
 const CreateStudentSchema = z.object({
   full_name: z.string().trim().min(2).max(160),
   first_name: z.string().trim().max(80).optional().or(z.literal("")),
@@ -29,10 +38,8 @@ const CreateStudentSchema = z.object({
   religion: z.string().trim().max(120).optional().or(z.literal("")),
   photo_url: z.string().trim().max(1000).optional().or(z.literal("")),
 
-  school_level: z.enum(["primary", "o-level", "a-level"]),
-  track: z.string().trim().max(40).optional().or(z.literal("")),
-  class_level: z.string().trim().max(40).optional().or(z.literal("")),
-  stream: z.string().trim().max(40).optional().or(z.literal("")),
+  term_id: z.coerce.number().int().positive(),
+  class_id: z.coerce.number().int().positive(),
 
   admission_year: z.coerce.number().int().min(2000).max(2100),
   graduation_year: z.coerce.number().int().min(2000).max(2100).optional().nullable(),
@@ -63,10 +70,8 @@ export async function createStudentProfile(formData: FormData) {
     religion: String(formData.get("religion") ?? "").trim(),
     photo_url: String(formData.get("photo_url") ?? "").trim(),
 
-    school_level: String(formData.get("school_level") ?? "").trim(),
-    track: String(formData.get("track") ?? "").trim(),
-    class_level: String(formData.get("class_level") ?? "").trim(),
-    stream: String(formData.get("stream") ?? "").trim(),
+    term_id: Number(formData.get("term_id") ?? 0),
+    class_id: Number(formData.get("class_id") ?? 0),
 
     admission_year: Number(formData.get("admission_year") ?? new Date().getFullYear()),
     graduation_year: formData.get("graduation_year")
@@ -86,6 +91,29 @@ export async function createStudentProfile(formData: FormData) {
   }
 
   const supabase = sb();
+
+  const { data: selectedClass, error: classError } = await supabase
+    .from("class_groups")
+    .select("id, name, level, stream, track_key, is_active")
+    .eq("id", parsed.data.class_id)
+    .maybeSingle();
+
+  if (classError) {
+    redirect(`/portal/admin/students/new?err=${enc(classError.message)}`);
+  }
+
+  if (!selectedClass) {
+    redirect(`/portal/admin/students/new?err=${enc("Selected class not found.")}`);
+  }
+
+  if (!selectedClass.is_active) {
+    redirect(`/portal/admin/students/new?err=${enc("Selected class is inactive.")}`);
+  }
+
+  const derivedSchoolLevel = deriveSchoolLevelFromClassLevel(selectedClass.level);
+  const derivedTrack = selectedClass.track_key ?? "secular";
+  const derivedClassLevel = selectedClass.level ?? null;
+  const derivedStream = selectedClass.stream ?? null;
 
   let studentId = "";
   let userId: string | null = null;
@@ -115,13 +143,12 @@ export async function createStudentProfile(formData: FormData) {
       redirect(`/portal/admin/students/new?err=${enc(profileError.message)}`);
     }
   } else {
-    const generated = crypto.randomUUID();
-    studentId = generated;
+    studentId = crypto.randomUUID();
     userId = null;
   }
 
   const genNo = await supabase.rpc("generate_student_no", {
-    p_school_level: parsed.data.school_level,
+    p_school_level: derivedSchoolLevel,
     p_year: parsed.data.admission_year,
   });
 
@@ -146,10 +173,10 @@ export async function createStudentProfile(formData: FormData) {
     nationality: parsed.data.nationality || null,
     religion: parsed.data.religion || null,
     photo_url: parsed.data.photo_url || null,
-    school_level: parsed.data.school_level,
-    track: parsed.data.track || null,
-    class_level: parsed.data.class_level || null,
-    stream: parsed.data.stream || null,
+    school_level: derivedSchoolLevel,
+    track: derivedTrack,
+    class_level: derivedClassLevel,
+    stream: derivedStream,
     admission_year: parsed.data.admission_year,
     graduation_year: parsed.data.graduation_year ?? null,
     admission_date: parsed.data.admission_date || null,
@@ -164,8 +191,48 @@ export async function createStudentProfile(formData: FormData) {
     redirect(`/portal/admin/students/new?err=${enc(studentError.message)}`);
   }
 
+  const { data: existingEnrollment, error: enrollmentCheckError } = await supabase
+    .from("enrollments")
+    .select("id")
+    .eq("student_id", studentId)
+    .eq("term_id", parsed.data.term_id)
+    .maybeSingle();
+
+  if (enrollmentCheckError) {
+    redirect(`/portal/admin/students/new?err=${enc(enrollmentCheckError.message)}`);
+  }
+
+  if (existingEnrollment?.id) {
+    const { error: enrollmentUpdateError } = await supabase
+      .from("enrollments")
+      .update({ class_id: parsed.data.class_id })
+      .eq("id", existingEnrollment.id);
+
+    if (enrollmentUpdateError) {
+      redirect(`/portal/admin/students/new?err=${enc(enrollmentUpdateError.message)}`);
+    }
+  } else {
+    const { error: enrollmentInsertError } = await supabase.from("enrollments").insert({
+      student_id: studentId,
+      class_id: parsed.data.class_id,
+      term_id: parsed.data.term_id,
+    });
+
+    if (enrollmentInsertError) {
+      redirect(`/portal/admin/students/new?err=${enc(enrollmentInsertError.message)}`);
+    }
+  }
+
   revalidatePath("/portal/admin/students");
   revalidatePath("/portal/admin/users");
+  revalidatePath("/portal/admin/academics");
+  revalidatePath("/portal/admin/academics?tab=enrollments");
+  revalidatePath("/portal/student/dashboard");
+  revalidatePath("/portal/student/attendance");
+  revalidatePath("/portal/student/grades");
+  revalidatePath("/portal/student/timetable");
+  revalidatePath("/portal/student/assignments");
+  revalidatePath("/portal/student/announcements");
 
   redirect(`/portal/admin/students/${studentId}?ok=${enc("Student registered successfully.")}`);
 }

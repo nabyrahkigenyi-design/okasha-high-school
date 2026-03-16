@@ -20,6 +20,15 @@ function InfoPill({ text }: { text: string }) {
   return <span className="portal-badge">{text}</span>;
 }
 
+const REPORT_COLUMNS = [
+  "Mid Term 1",
+  "End Term 1",
+  "Mid Term 2",
+  "End Term 2",
+  "Mid Term 3",
+  "End of Year",
+] as const;
+
 export default async function TeacherGradingPage({
   searchParams,
 }: {
@@ -27,7 +36,10 @@ export default async function TeacherGradingPage({
 }) {
   const params = await searchParams;
   const assignmentId = params.assignmentId ? Number(params.assignmentId) : 0;
-  const assessment = (params.assessment ?? "Test 1").trim();
+  const rawAssessment = (params.assessment ?? "Mid Term 1").trim();
+  const assessment = REPORT_COLUMNS.includes(rawAssessment as (typeof REPORT_COLUMNS)[number])
+    ? rawAssessment
+    : "Mid Term 1";
 
   const options = await listGradingOptions();
   const selected = assignmentId ? await getGradingScopeOrNull(assignmentId) : null;
@@ -40,7 +52,7 @@ export default async function TeacherGradingPage({
   const gradeMap = selected ? await getGradeMapForScope({ assignmentId: selected.id, assessment }) : new Map();
   const meta = selected ? await getAssessmentMeta({ assignmentId: selected.id, assessment }) : null;
 
-  const locked = gradeMap.size > 0 || !!meta?.finalized_at;
+  const locked = !!meta?.finalized_at;
 
   const defaultMax =
     students.length > 0 ? gradeMap.get(students[0].id)?.max_score ?? "100" : meta?.max_score ?? "100";
@@ -54,7 +66,7 @@ export default async function TeacherGradingPage({
           <div className="min-w-0">
             <h1 className="portal-title">Grading</h1>
             <p className="portal-subtitle">
-              Select a class and assessment, enter scores, then finalize when you are completely done.
+              Select a class and a report assessment, enter scores, then finalize when you are completely done.
             </p>
           </div>
 
@@ -95,12 +107,13 @@ export default async function TeacherGradingPage({
 
           <label className="grid gap-1">
             <span className="text-sm">Assessment</span>
-            <input
-              className="portal-input"
-              name="assessment"
-              defaultValue={assessment}
-              placeholder="Midterm Test"
-            />
+            <select className="portal-select" name="assessment" defaultValue={assessment}>
+              {REPORT_COLUMNS.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </select>
           </label>
 
           <div className="flex items-end">
